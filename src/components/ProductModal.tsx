@@ -16,9 +16,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
 
-  if (!isOpen || !product) return null;
-
-  // Initialize selections when product changes
+  // Initialize selections when product changes - MUST be before conditional returns
   React.useEffect(() => {
     if (product) {
       setSelectedColor(product.colors[0]?.name || '');
@@ -26,6 +24,8 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
       setCurrentImageIndex(0);
     }
   }, [product]);
+
+  if (!isOpen || !product) return null;
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor) {
