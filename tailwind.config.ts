@@ -57,6 +57,15 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        "product-card": {
+          DEFAULT: "hsl(var(--product-card))",
+          foreground: "hsl(var(--product-card-foreground))",
+        },
+        "tab-active": "hsl(var(--tab-active))",
+        "cart-overlay": "hsl(var(--cart-overlay))",
+        "size-button": "hsl(var(--size-button))",
+        "color-yellow": "hsl(var(--color-yellow))",
+        "color-pink": "hsl(var(--color-pink))",
       },
       borderRadius: {
         lg: "var(--radius)",
