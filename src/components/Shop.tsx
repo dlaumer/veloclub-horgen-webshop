@@ -16,7 +16,7 @@ const categories = [
 ];
 
 export const Shop = () => {
-  const [activeCategory, setActiveCategory] = useState('men');
+  const [activeCategory, setActiveCategory] = useState('all');
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [cart, setCart] = useState<CartState>({
