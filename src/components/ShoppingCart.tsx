@@ -27,7 +27,7 @@ export const ShoppingCart = ({
       {/* Cart Button */}
       <button
         onClick={onToggle}
-        className="fixed top-4 right-4 z-50 flex items-center justify-center w-12 h-12 bg-primary text-primary-foreground rounded-full shadow-lg hover:scale-105 transition-transform"
+        className="fixed top-4 right-4 z-50 flex items-center justify-center w-12 h-12 bg-button-primary text-button-primary-foreground rounded-full shadow-lg hover:scale-105 transition-transform"
       >
         <ShoppingCartIcon className="h-5 w-5" />
         {totalItems > 0 && (
@@ -115,9 +115,9 @@ export const ShoppingCart = ({
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center gap-2 text-sm">
                     <span>We accept</span>
-                    <div className="flex items-center gap-1 text-primary font-semibold">
-                      <div className="w-6 h-4 bg-primary rounded-sm flex items-center justify-center">
-                        <span className="text-primary-foreground text-xs font-bold">T</span>
+                    <div className="flex items-center gap-1 text-button-primary font-semibold">
+                      <div className="w-6 h-4 bg-button-primary rounded-sm flex items-center justify-center">
+                        <span className="text-button-primary-foreground text-xs font-bold">T</span>
                       </div>
                       TWINT
                     </div>
@@ -125,7 +125,7 @@ export const ShoppingCart = ({
                   
                   <Button 
                     onClick={onCheckout}
-                    className="w-full bg-primary hover:bg-primary/90 text-primary-foreground"
+                    className="w-full bg-button-primary hover:bg-button-primary/90 text-button-primary-foreground"
                   >
                     Pay
                   </Button>
