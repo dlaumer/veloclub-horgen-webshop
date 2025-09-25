@@ -66,6 +66,8 @@ export default {
         "size-button": "hsl(var(--size-button))",
         "color-yellow": "hsl(var(--color-yellow))",
         "color-pink": "hsl(var(--color-pink))",
+        "button-primary": "hsl(var(--button-primary))",
+        "button-primary-foreground": "hsl(var(--button-primary-foreground))",
       },
       borderRadius: {
         lg: "var(--radius)",

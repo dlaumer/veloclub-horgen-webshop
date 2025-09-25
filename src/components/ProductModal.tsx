@@ -133,7 +133,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
             <Button
               onClick={handleAddToCart}
               disabled={!canAddToCart}
-              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground py-3 text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full bg-button-primary hover:bg-button-primary/90 text-button-primary-foreground py-3 text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Add to cart
             </Button>

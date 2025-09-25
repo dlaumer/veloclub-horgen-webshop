@@ -36,14 +36,16 @@ All colors MUST be HSL.
     --input: 220 13% 91%;
     --ring: 227 69% 31%;
 
-    /* Custom bike shop colors */
-    --product-card: 0 0% 94%;
-    --product-card-foreground: 220 13% 18%;
-    --tab-active: 0 74% 50%;
+    /* Custom bike shop colors - matching exact design */
+    --product-card: 0 0% 96%;
+    --product-card-foreground: 0 0% 20%;
+    --tab-active: 340 82% 52%;
     --cart-overlay: 0 0% 100%;
-    --size-button: 0 0% 96%;
+    --size-button: 0 0% 97%;
     --color-yellow: 60 100% 50%;
     --color-pink: 330 100% 60%;
+    --button-primary: 230 65% 25%;
+    --button-primary-foreground: 0 0% 100%;
 
     --radius: 0.5rem;
 
