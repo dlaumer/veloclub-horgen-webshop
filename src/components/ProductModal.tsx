@@ -111,7 +111,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                       key={index}
                       onClick={() => setCurrentImageIndex(index)}
                       className={cn(
-                        "w-2 h-2 rounded-full transition-colors",
+                        "w-2 h-2 rounded-full border! transition-colors",
                         index === currentImageIndex ? "bg-primary" : "bg-muted"
                       )}
                     />
