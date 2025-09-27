@@ -3,10 +3,11 @@ export interface Product {
   name: string;
   price: number;
   category: 'men' | 'women' | 'kids' | 'others';
-  image: string;
+  image: string; // Main image for the card
   colors: Array<{
     name: string;
     code: string;
+    images: string[]; // Multiple images for this color
   }>;
   sizes: Array<{
     name: string;
