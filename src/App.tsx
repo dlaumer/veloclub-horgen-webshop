@@ -10,6 +10,7 @@ const queryClient = new QueryClient();
 
 function sendHeight() {
   const height = document.body.scrollHeight;
+  console.log("Sending height:", height);
   window.parent.postMessage({ iframeHeight: height }, "*");
 }
 

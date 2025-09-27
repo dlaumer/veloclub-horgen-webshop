@@ -94,7 +94,6 @@ export const Shop = () => {
     <div className="min-h-screen bg-background p-6">
       {/* Header */}
       <div className="max-w-6xl mx-auto mb-8">
-        <h1 className="text-3xl font-bold text-center mb-8">Our Products</h1>
         
         <CategoryTabs
           categories={categories}
