@@ -25,13 +25,34 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
     }
   }, [product]);
 
+  // Reset image index when color changes
+  React.useEffect(() => {
+    setCurrentImageIndex(0);
+  }, [selectedColor]);
+
   if (!isOpen || !product) return null;
+
+  const selectedColorData = product.colors.find(c => c.name === selectedColor);
+  const currentImages = selectedColorData?.images || [product.image];
+  const currentImage = currentImages[currentImageIndex] || product.image;
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor) {
       onAddToCart(product.id, selectedSize, selectedColor);
       onClose();
     }
+  };
+
+  const handlePrevImage = () => {
+    setCurrentImageIndex(prev => 
+      prev === 0 ? currentImages.length - 1 : prev - 1
+    );
+  };
+
+  const handleNextImage = () => {
+    setCurrentImageIndex(prev => 
+      prev === currentImages.length - 1 ? 0 : prev + 1
+    );
   };
 
   const selectedSizeStock = product.sizes.find(s => s.name === selectedSize)?.stock || 0;
@@ -59,17 +80,44 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
           {/* Image Section */}
           <div className="flex-1">
             <div className="relative bg-product-card rounded-lg p-8 mb-4">
+              {currentImages.length > 1 && (
+                <>
+                  <button
+                    onClick={handlePrevImage}
+                    className="absolute left-4 top-1/2 transform -translate-y-1/2 z-10 p-2 rounded-full bg-white/80 hover:bg-white/90 transition-colors shadow-lg"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={handleNextImage}
+                    className="absolute right-4 top-1/2 transform -translate-y-1/2 z-10 p-2 rounded-full bg-white/80 hover:bg-white/90 transition-colors shadow-lg"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </>
+              )}
+              
               <img
-                src={product.image}
-                alt={product.name}
+                src={currentImage}
+                alt={`${product.name} - ${selectedColor}`}
                 className="w-full h-64 object-contain"
               />
               
               {/* Navigation dots */}
-              <div className="flex justify-center mt-4 gap-2">
-                <div className="w-2 h-2 rounded-full bg-primary"></div>
-                <div className="w-2 h-2 rounded-full bg-muted"></div>
-              </div>
+              {currentImages.length > 1 && (
+                <div className="flex justify-center mt-4 gap-2">
+                  {currentImages.map((_, index) => (
+                    <button
+                      key={index}
+                      onClick={() => setCurrentImageIndex(index)}
+                      className={cn(
+                        "w-2 h-2 rounded-full transition-colors",
+                        index === currentImageIndex ? "bg-primary" : "bg-muted"
+                      )}
+                    />
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

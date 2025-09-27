@@ -12,8 +12,16 @@ export const products: Product[] = [
     category: 'men',
     image: jersey1,
     colors: [
-      { name: 'Yellow', code: '#FFFF00' },
-      { name: 'Pink', code: '#FF1493' }
+      { 
+        name: 'Yellow', 
+        code: '#FFFF00',
+        images: [jersey1, bibShorts, jersey2] // Multiple images for yellow
+      },
+      { 
+        name: 'Pink', 
+        code: '#FF1493',
+        images: [jersey2, jersey1, kidsJersey] // Multiple images for pink
+      }
     ],
     sizes: [
       { name: 'XS', stock: 1 },
@@ -30,8 +38,16 @@ export const products: Product[] = [
     category: 'men',
     image: bibShorts,
     colors: [
-      { name: 'Yellow', code: '#FFFF00' },
-      { name: 'Pink', code: '#FF1493' }
+      { 
+        name: 'Yellow', 
+        code: '#FFFF00',
+        images: [bibShorts, jersey1, jersey2]
+      },
+      { 
+        name: 'Pink', 
+        code: '#FF1493',
+        images: [jersey2, bibShorts, kidsJersey]
+      }
     ],
     sizes: [
       { name: 'XS', stock: 2 },
@@ -48,8 +64,16 @@ export const products: Product[] = [
     category: 'women',
     image: jersey2,
     colors: [
-      { name: 'Yellow', code: '#FFFF00' },
-      { name: 'Pink', code: '#FF1493' }
+      { 
+        name: 'Yellow', 
+        code: '#FFFF00',
+        images: [jersey2, jersey1, bibShorts]
+      },
+      { 
+        name: 'Pink', 
+        code: '#FF1493',
+        images: [jersey1, jersey2, kidsJersey]
+      }
     ],
     sizes: [
       { name: 'XS', stock: 1 },
@@ -66,8 +90,16 @@ export const products: Product[] = [
     category: 'kids',
     image: kidsJersey,
     colors: [
-      { name: 'Yellow', code: '#FFFF00' },
-      { name: 'Pink', code: '#FF1493' }
+      { 
+        name: 'Yellow', 
+        code: '#FFFF00',
+        images: [kidsJersey, jersey1, jersey2]
+      },
+      { 
+        name: 'Pink', 
+        code: '#FF1493',
+        images: [jersey2, kidsJersey, bibShorts]
+      }
     ],
     sizes: [
       { name: 'XS', stock: 3 },
@@ -82,9 +114,13 @@ export const products: Product[] = [
     name: 'Team Cap',
     price: 25.00,
     category: 'others',
-    image: jersey1, // Using same image for now
+    image: jersey1,
     colors: [
-      { name: 'Yellow', code: '#FFFF00' }
+      { 
+        name: 'Yellow', 
+        code: '#FFFF00',
+        images: [jersey1, jersey2]
+      }
     ],
     sizes: [
       { name: 'One Size', stock: 10 }
@@ -95,9 +131,13 @@ export const products: Product[] = [
     name: 'Team Water Bottle',
     price: 15.00,
     category: 'others',
-    image: jersey2, // Using same image for now
+    image: jersey2,
     colors: [
-      { name: 'Yellow', code: '#FFFF00' }
+      { 
+        name: 'Yellow', 
+        code: '#FFFF00',
+        images: [jersey2, jersey1]
+      }
     ],
     sizes: [
       { name: '500ml', stock: 5 }
