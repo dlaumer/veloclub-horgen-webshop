@@ -44,13 +44,13 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   };
 
   const handlePrevImage = () => {
-    setCurrentImageIndex(prev => 
+    setCurrentImageIndex(prev =>
       prev === 0 ? currentImages.length - 1 : prev - 1
     );
   };
 
   const handleNextImage = () => {
-    setCurrentImageIndex(prev => 
+    setCurrentImageIndex(prev =>
       prev === currentImages.length - 1 ? 0 : prev + 1
     );
   };
@@ -60,8 +60,8 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
 
   return (
     <div className="fixed inset-0 z-50">
-      <div 
-        className="absolute inset-0 bg-black bg-opacity-50" 
+      <div
+        className="absolute inset-0 bg-black bg-opacity-50"
         onClick={onClose}
       />
       <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
@@ -96,13 +96,13 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                   </button>
                 </>
               )}
-              
+
               <img
                 src={currentImage}
                 alt={`${product.name} - ${selectedColor}`}
                 className="w-full h-64 object-contain"
               />
-              
+
               {/* Navigation dots */}
               {currentImages.length > 1 && (
                 <div className="flex justify-center mt-4 gap-2">
@@ -122,7 +122,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
           </div>
 
           {/* Details Section */}
-          <div className="flex-1 space-y-6">
+          <div className="flex-1 space-y-6 w-half max-w-md">
             <div>
               <h3 className="text-2xl font-semibold mb-2">{product.name}</h3>
               <p className="text-2xl font-bold">CHF {product.price.toFixed(2)}</p>
@@ -138,8 +138,8 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                     onClick={() => setSelectedColor(color.name)}
                     className={cn(
                       "w-16 h-16 rounded border-2 transition-all flex flex-col items-center justify-center p-1",
-                      selectedColor === color.name 
-                        ? "border-primary" 
+                      selectedColor === color.name
+                        ? "border-primary"
                         : "border-border hover:border-muted-foreground"
                     )}
                   >
@@ -154,17 +154,19 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
 
             {/* Size Selection */}
             <div>
-              <h4 className="text-sm font-medium mb-3 text-muted-foreground">Choose size</h4>
-              <div className="flex gap-2">
+              <h4 className="text-sm font-medium mb-3 text-muted-foreground">
+                Choose size
+              </h4>
+              <div className="flex gap-2 overflow-x-auto pb-2 max-w-full">
                 {product.sizes.map((size) => (
                   <button
                     key={size.name}
                     onClick={() => setSelectedSize(size.name)}
                     disabled={size.stock === 0}
                     className={cn(
-                      "w-16 h-16 rounded border transition-all flex flex-col items-center justify-center",
-                      size.stock === 0 
-                        ? "border-border bg-muted text-muted-foreground cursor-not-allowed" 
+                      "w-16 h-16 rounded border transition-all flex-shrink-0 flex flex-col items-center justify-center",
+                      size.stock === 0
+                        ? "border-border bg-muted text-muted-foreground cursor-not-allowed"
                         : selectedSize === size.name
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border bg-size-button hover:border-muted-foreground"
@@ -176,6 +178,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                 ))}
               </div>
             </div>
+
 
             {/* Add to Cart Button */}
             <Button
