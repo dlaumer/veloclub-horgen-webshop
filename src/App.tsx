@@ -21,7 +21,6 @@ window.addEventListener("resize", sendHeight);
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
-      <StockGrid />
       <Toaster />
       <Sonner />
       <BrowserRouter>

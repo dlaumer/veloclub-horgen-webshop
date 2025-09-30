@@ -11,6 +11,8 @@ export type Product = {
   sizes: Record<SizeKey, number>;
   totalStock: number;
   imageUrl?: string;
+  category: string;
+  color: string;
 };
 
 type StockResponse =
