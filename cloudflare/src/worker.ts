@@ -10,7 +10,9 @@ const DEFAULT_ALLOWED = [
   "http://localhost:3000",
   "http://localhost:5173",
   "http://localhost:8080",
-  "https://dlaumer.github.io/veloclub-horgen-webshop/"
+  "https://dlaumer.github.io/veloclub-horgen-webshop/",
+  "https://dlaumer.github.io",
+  "https://veloclub-horgen.ch",
 ];
 
 function allowlist(env: Env): Set<string> {
