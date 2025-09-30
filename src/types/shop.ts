@@ -2,7 +2,7 @@ export interface Product {
   id: string;
   name: string;
   price: number;
-  category: 'men' | 'women' | 'kids' | 'others';
+  category:string;
   image: string; // Main image for the card
   colors: Array<{
     name: string;
