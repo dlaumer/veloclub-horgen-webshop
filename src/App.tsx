@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
+import StockGrid from "./components/StockGrid";
 
 const queryClient = new QueryClient();
 
@@ -20,6 +21,7 @@ window.addEventListener("resize", sendHeight);
 const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
+      <StockGrid />
       <Toaster />
       <Sonner />
       <BrowserRouter>
