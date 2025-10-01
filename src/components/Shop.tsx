@@ -134,8 +134,8 @@ export const Shop = () => {
   if (loading) {
     // Loading view while stock is fetched (matches the StockGrid “Loading stock…” pattern) :contentReference[oaicite:1]{index=1}
     return (
-      <div className="min-h-screen bg-background p-6">
-        <div className="max-w-6xl mx-auto mb-8">
+      <div className="min-h-screen bg-background p-3 sm:p-6">
+        <div className="max-w-6xl mx-auto mb-6 sm:mb-8">
           <CategoryTabs
             categories={categories}
             activeCategory={activeCategory}
@@ -143,7 +143,7 @@ export const Shop = () => {
           />
         </div>
         <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
               <div
                 key={i}
@@ -173,9 +173,9 @@ export const Shop = () => {
   }
 
   return (
-    <div className="min-h-screen bg-background p-6">
+    <div className="min-h-screen bg-background p-3 sm:p-6">
       {/* Header */}
-      <div className="max-w-6xl mx-auto mb-8">
+      <div className="max-w-6xl mx-auto mb-6 sm:mb-8">
         <CategoryTabs
           categories={categories}
           activeCategory={activeCategory}
@@ -183,9 +183,9 @@ export const Shop = () => {
         />
       </div>
 
-      {/* Product Grid - exactly 3 columns */}
+      {/* Product Grid - responsive */}
       <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredProducts.map((product) => (
             <ProductCard
               key={product.id}

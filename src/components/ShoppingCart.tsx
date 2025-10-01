@@ -44,7 +44,7 @@ export const ShoppingCart = ({
             className="absolute inset-0 bg-black bg-opacity-50" 
             onClick={onToggle}
           />
-          <div className="absolute right-0 top-0 h-full w-96 bg-cart-overlay shadow-xl flex flex-col">
+          <div className="absolute right-0 top-0 h-full w-full sm:w-96 bg-cart-overlay shadow-xl flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-border">
               <h2 className="text-lg font-semibold">Cart</h2>
