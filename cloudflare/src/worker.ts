@@ -13,6 +13,8 @@ const DEFAULT_ALLOWED = [
   "https://dlaumer.github.io/veloclub-horgen-webshop/",
   "https://dlaumer.github.io",
   "https://veloclub-horgen.ch",
+  "https://lovable.dev/",
+  "https://lovable.dev/projects/9492a07e-f9d2-4df6-bd1f-28d3cbdddd7f"
 ];
 
 function allowlist(env: Env): Set<string> {
