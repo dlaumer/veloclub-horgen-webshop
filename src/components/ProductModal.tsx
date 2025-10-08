@@ -8,7 +8,7 @@ interface ProductModalProps {
   product: Product | null;
   isOpen: boolean;
   onClose: () => void;
-  onAddToCart: (productId: string, size: string, color: string) => void;
+  onAddToCart: (productId: string, size: string, color: string, colorId: string) => void;
 }
 
 export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductModalProps) => {
@@ -35,10 +35,11 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const selectedColorData = product.colors.find(c => c.name === selectedColor);
   const currentImages = selectedColorData?.images || [product.image];
   const currentImage = currentImages[currentImageIndex] || product.image;
+  const availableSizes = selectedColorData?.sizes || [];
 
   const handleAddToCart = () => {
-    if (selectedSize && selectedColor) {
-      onAddToCart(product.id, selectedSize, selectedColor);
+    if (selectedSize && selectedColor && selectedColorData) {
+      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id);
       onClose();
     }
   };
@@ -55,7 +56,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
     );
   };
 
-  const selectedSizeStock = product.sizes.find(s => s.name === selectedSize)?.stock || 0;
+  const selectedSizeStock = availableSizes.find(s => s.name === selectedSize)?.stock || 0;
   const canAddToCart = selectedSize && selectedColor && selectedSizeStock > 0;
 
   return (
@@ -158,7 +159,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                 Choose size
               </h4>
               <div className="flex gap-2 overflow-x-auto pb-2">
-                {product.sizes.map((size) => (
+                {availableSizes.map((size) => (
                   <button
                     key={size.name}
                     onClick={() => setSelectedSize(size.name)}

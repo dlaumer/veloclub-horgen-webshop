@@ -5,11 +5,15 @@ export interface Product {
   category:string;
   image: string; // Main image for the card
   colors: Array<{
+    id: string;
     name: string;
     code: string;
-    images: string[]; // Multiple images for this color
+    images: string[];
+    sizes: Array<{
+      name: string;
+      stock: number;
+    }>;
   }>;
-  sizes: any;
   description?: string;
 }
 
@@ -20,6 +24,7 @@ export interface CartItem {
   price: number;
   size: string;
   color: string;
+  colorId: string;
   quantity: number;
   image: string;
 }
