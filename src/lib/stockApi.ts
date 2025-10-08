@@ -8,11 +8,19 @@ export type Product = {
   id: string;
   name: string;
   price: number;
-  sizes: Record<SizeKey, number>;
   totalStock: number;
   imageUrl?: string;
   category: string;
-  colors: any;
+  colors: Array<{
+    id: string;
+    name: string;
+    code: string;
+    images: string[];
+    sizes: Array<{
+      name: SizeKey;
+      stock: number;
+    }>;
+  }>;
 };
 
 type StockResponse =

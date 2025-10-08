@@ -32,15 +32,12 @@ export const Shop = () => {
 
   // Adapt stock items (sku, imageUrl, etc.) to Shop Product
   const adapt = (s: StockProduct): Product => ({
-    id: s.id, // map sku -> id
+    id: s.id,
     name: s.name,
     price: s.price,
-    image: s.imageUrl ?? "", // map imageUrl -> image
-
-    // If you later expose a real category field from stock, map it here.
+    image: s.imageUrl ?? "",
     category: s.category,
-    colors: s.colors,   
-    sizes: s.sizes,
+    colors: s.colors,
   });
 
   useEffect(() => {
@@ -71,7 +68,7 @@ export const Shop = () => {
     setIsModalOpen(true);
   };
 
-  const handleAddToCart = (productId: string, size: string, color: string) => {
+  const handleAddToCart = (productId: string, size: string, color: string, colorId: string) => {
     const product = allProducts.find((p) => p.id === productId);
     if (!product) return;
 
@@ -79,7 +76,7 @@ export const Shop = () => {
       (item) =>
         item.productId === productId &&
         item.size === size &&
-        item.color === color
+        item.colorId === colorId
     );
 
     if (existingItemIndex >= 0) {
@@ -88,12 +85,13 @@ export const Shop = () => {
       setCart((prev) => ({ ...prev, items: updatedItems }));
     } else {
       const newItem: CartItem = {
-        id: `${productId}-${size}-${color}-${Date.now()}`,
+        id: `${productId}-${size}-${colorId}-${Date.now()}`,
         productId,
         name: product.name,
         price: product.price,
         size,
         color,
+        colorId,
         quantity: 1,
         image: product.image,
       };

@@ -9,6 +9,22 @@ import shortsGold2 from '@/assets/shorts-gold-2.jpg';
 import shortsPink1 from '@/assets/shorts-pink-1.jpg';
 import shortsPink2 from '@/assets/shorts-pink-2.jpg';
 
+const sizes = [
+  { name: 'XS', stock: 1 },
+  { name: 'S', stock: 2 },
+  { name: 'M', stock: 1 },
+  { name: 'L', stock: 2 },
+  { name: 'XL', stock: 0 }
+];
+
+const shortsSizes = [
+  { name: 'XS', stock: 2 },
+  { name: 'S', stock: 1 },
+  { name: 'M', stock: 3 },
+  { name: 'L', stock: 1 },
+  { name: 'XL', stock: 2 }
+];
+
 export const products: Product[] = [
   {
     id: '1',
@@ -18,22 +34,19 @@ export const products: Product[] = [
     image: jerseyGold1,
     colors: [
       { 
+        id: '1-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [jerseyGold1, jerseyGold2] // Multiple images for yellow
+        images: [jerseyGold1, jerseyGold2],
+        sizes: [...sizes]
       },
       { 
+        id: '1-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [jerseyPink1, jerseyPink2] // Multiple images for pink
+        images: [jerseyPink1, jerseyPink2],
+        sizes: [...sizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 1 },
-      { name: 'S', stock: 2 },
-      { name: 'M', stock: 1 },
-      { name: 'L', stock: 2 },
-      { name: 'XL', stock: 0 }
     ]
   },
   {
@@ -44,22 +57,19 @@ export const products: Product[] = [
     image: shortsGold1,
     colors: [
       { 
+        id: '2-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [shortsGold1, shortsGold2]
+        images: [shortsGold1, shortsGold2],
+        sizes: [...shortsSizes]
       },
       { 
+        id: '2-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [shortsPink1, shortsPink2]
+        images: [shortsPink1, shortsPink2],
+        sizes: [...shortsSizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 2 },
-      { name: 'S', stock: 1 },
-      { name: 'M', stock: 3 },
-      { name: 'L', stock: 1 },
-      { name: 'XL', stock: 2 }
     ]
   },
   {
@@ -70,22 +80,19 @@ export const products: Product[] = [
     image: jerseyGold1,
     colors: [
       { 
+        id: '3-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [jerseyGold1, jerseyGold2] // Multiple images for yellow
+        images: [jerseyGold1, jerseyGold2],
+        sizes: [...sizes]
       },
       { 
+        id: '3-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [jerseyPink1, jerseyPink2] // Multiple images for pink
+        images: [jerseyPink1, jerseyPink2],
+        sizes: [...sizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 1 },
-      { name: 'S', stock: 2 },
-      { name: 'M', stock: 1 },
-      { name: 'L', stock: 2 },
-      { name: 'XL', stock: 0 }
     ]
   },
   {
@@ -96,22 +103,19 @@ export const products: Product[] = [
     image: shortsGold1,
     colors: [
       { 
+        id: '4-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [shortsGold1, shortsGold2]
+        images: [shortsGold1, shortsGold2],
+        sizes: [...shortsSizes]
       },
       { 
+        id: '4-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [shortsPink1, shortsPink2]
+        images: [shortsPink1, shortsPink2],
+        sizes: [...shortsSizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 2 },
-      { name: 'S', stock: 1 },
-      { name: 'M', stock: 3 },
-      { name: 'L', stock: 1 },
-      { name: 'XL', stock: 2 }
     ]
   },
   {
@@ -122,22 +126,19 @@ export const products: Product[] = [
     image: jerseyGold1,
     colors: [
       { 
+        id: '5-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [jerseyGold1, jerseyGold2] // Multiple images for yellow
+        images: [jerseyGold1, jerseyGold2],
+        sizes: [...sizes]
       },
       { 
+        id: '5-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [jerseyPink1, jerseyPink2] // Multiple images for pink
+        images: [jerseyPink1, jerseyPink2],
+        sizes: [...sizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 1 },
-      { name: 'S', stock: 2 },
-      { name: 'M', stock: 1 },
-      { name: 'L', stock: 2 },
-      { name: 'XL', stock: 0 }
     ]
   },
   {
@@ -148,22 +149,19 @@ export const products: Product[] = [
     image: shortsGold1,
     colors: [
       { 
+        id: '6-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [shortsGold1, shortsGold2]
+        images: [shortsGold1, shortsGold2],
+        sizes: [...shortsSizes]
       },
       { 
+        id: '6-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [shortsPink1, shortsPink2]
+        images: [shortsPink1, shortsPink2],
+        sizes: [...shortsSizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 2 },
-      { name: 'S', stock: 1 },
-      { name: 'M', stock: 3 },
-      { name: 'L', stock: 1 },
-      { name: 'XL', stock: 2 }
     ]
   },
   {
@@ -174,22 +172,19 @@ export const products: Product[] = [
     image: jerseyGold1,
     colors: [
       { 
+        id: '7-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [jerseyGold1, jerseyGold2] // Multiple images for yellow
+        images: [jerseyGold1, jerseyGold2],
+        sizes: [...sizes]
       },
       { 
+        id: '7-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [jerseyPink1, jerseyPink2] // Multiple images for pink
+        images: [jerseyPink1, jerseyPink2],
+        sizes: [...sizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 1 },
-      { name: 'S', stock: 2 },
-      { name: 'M', stock: 1 },
-      { name: 'L', stock: 2 },
-      { name: 'XL', stock: 0 }
     ]
   },
   {
@@ -200,22 +195,19 @@ export const products: Product[] = [
     image: shortsGold1,
     colors: [
       { 
+        id: '8-yellow',
         name: 'Yellow', 
         code: '#FFFF00',
-        images: [shortsGold1, shortsGold2]
+        images: [shortsGold1, shortsGold2],
+        sizes: [...shortsSizes]
       },
       { 
+        id: '8-pink',
         name: 'Pink', 
         code: '#FF1493',
-        images: [shortsPink1, shortsPink2]
+        images: [shortsPink1, shortsPink2],
+        sizes: [...shortsSizes]
       }
-    ],
-    sizes: [
-      { name: 'XS', stock: 2 },
-      { name: 'S', stock: 1 },
-      { name: 'M', stock: 3 },
-      { name: 'L', stock: 1 },
-      { name: 'XL', stock: 2 }
     ]
   },
 ];
