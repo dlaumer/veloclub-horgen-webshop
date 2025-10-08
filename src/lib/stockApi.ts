@@ -5,14 +5,14 @@ export type SizeKey =
   | 'XXL' | '3XL' | '4XL' | '5XL';
 
 export type Product = {
-  sku: string;
+  id: string;
   name: string;
   price: number;
   sizes: Record<SizeKey, number>;
   totalStock: number;
   imageUrl?: string;
   category: string;
-  color: string;
+  colors: any;
 };
 
 type StockResponse =

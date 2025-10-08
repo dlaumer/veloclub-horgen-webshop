@@ -32,22 +32,15 @@ export const Shop = () => {
 
   // Adapt stock items (sku, imageUrl, etc.) to Shop Product
   const adapt = (s: StockProduct): Product => ({
-    id: s.sku, // map sku -> id
+    id: s.id, // map sku -> id
     name: s.name,
     price: s.price,
     image: s.imageUrl ?? "", // map imageUrl -> image
 
     // If you later expose a real category field from stock, map it here.
     category: s.category,
-    colors:  [{
-      name: "Color",   
-      code: s.color,
-      images: [s.imageUrl ?? "",]   
-  }],   
-    sizes: Object.entries(s.sizes || {}).map(([name, stock]) => ({
-      name,
-      stock: Number(stock),
-    })),
+    colors: s.colors,   
+    sizes: s.sizes,
   });
 
   useEffect(() => {
@@ -57,6 +50,7 @@ export const Shop = () => {
       .then((stock) => {
         if (!on) return;
         const mapped = stock.map(adapt);
+        console.log(mapped);
         setAllProducts(mapped);
       })
       .catch((e) => on && setErr(String(e)))

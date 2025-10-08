@@ -9,10 +9,7 @@ export interface Product {
     code: string;
     images: string[]; // Multiple images for this color
   }>;
-  sizes: Array<{
-    name: string;
-    stock: number;
-  }>;
+  sizes: any;
   description?: string;
 }
 
