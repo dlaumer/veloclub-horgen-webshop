@@ -14,7 +14,7 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
       <div className="aspect-square mb-4 flex items-center justify-center bg-white rounded-lg overflow-hidden">
         <img
           src={product.image}
-          alt={product.name}
+          alt={product.image}
           className="w-full h-full object-contain"
         />
       </div>
