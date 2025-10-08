@@ -9,7 +9,7 @@ export type Product = {
   name: string;
   price: number;
   totalStock: number;
-  imageUrl?: string;
+  image?: string;
   category: string;
   colors: Array<{
     id: string;

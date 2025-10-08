@@ -35,7 +35,7 @@ export const Shop = () => {
     id: s.id,
     name: s.name,
     price: s.price,
-    image: s.imageUrl ?? "",
+    image: s.image ?? "",
     category: s.category,
     colors: s.colors,
   });
