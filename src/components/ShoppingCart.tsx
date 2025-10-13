@@ -2,6 +2,7 @@ import { ShoppingCart as ShoppingCartIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CartItem } from "@/types/shop";
 import { useTranslation } from "@/hooks/useTranslation";
+import { LanguageSelector } from "@/components/LanguageSelector";
 
 interface ShoppingCartProps {
   items: CartItem[];
@@ -26,18 +27,23 @@ export const ShoppingCart = ({
 
   return (
     <>
-      {/* Cart Button */}
-      <button
-        onClick={onToggle}
-        className="fixed top-4 right-4 z-50 flex items-center justify-center w-12 h-12 bg-button-primary text-button-primary-foreground rounded-full shadow-lg hover:scale-105 transition-transform"
-      >
-        <ShoppingCartIcon className="h-5 w-5" />
-        {totalItems > 0 && (
-          <span className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold">
-            {totalItems}
-          </span>
-        )}
-      </button>
+      {/* Cart Button and Language Selector */}
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+        <LanguageSelector />
+        <div className="relative">
+          <button
+            onClick={onToggle}
+            className="flex items-center justify-center w-12 h-12 bg-button-primary text-button-primary-foreground rounded-full shadow-lg hover:scale-105 transition-transform"
+          >
+            <ShoppingCartIcon className="h-5 w-5" />
+            {totalItems > 0 && (
+              <span className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold">
+                {totalItems}
+              </span>
+            )}
+          </button>
+        </div>
+      </div>
 
       {/* Cart Overlay */}
       {isOpen && (
@@ -71,17 +77,17 @@ export const ShoppingCart = ({
                         alt={item.name}
                         className="w-16 h-16 object-contain bg-product-card rounded"
                       />
-                      <div className="flex-1">
-                        <h3 className="font-medium text-sm">{item.name}</h3>
-                        <p className="text-xs text-muted-foreground">
-                          Size: {item.size}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Colour: {item.color}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Amount: {item.quantity}
-                        </p>
+                       <div className="flex-1">
+                         <h3 className="font-medium text-sm">{item.name}</h3>
+                         <p className="text-xs text-muted-foreground">
+                           {t('size')}: {item.size}
+                         </p>
+                         <p className="text-xs text-muted-foreground">
+                           {t('colour')}: {item.color}
+                         </p>
+                         <p className="text-xs text-muted-foreground">
+                           {t('amount')}: {item.quantity}
+                         </p>
                         <p className="font-semibold text-sm mt-1">
                           CHF {item.price.toFixed(2)}
                         </p>
@@ -116,7 +122,7 @@ export const ShoppingCart = ({
                 
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center gap-2 text-sm">
-                    <span>We accept</span>
+                    <span>{t('weAccept')}</span>
                     <div className="flex items-center gap-1 text-button-primary font-semibold">
                       <div className="w-6 h-4 bg-button-primary rounded-sm flex items-center justify-center">
                         <span className="text-button-primary-foreground text-xs font-bold">T</span>
@@ -129,7 +135,7 @@ export const ShoppingCart = ({
                     onClick={onCheckout}
                     className="w-full bg-button-primary hover:bg-button-primary/90 text-button-primary-foreground"
                   >
-                    Pay
+                    {t('pay')}
                   </Button>
                 </div>
               </div>
