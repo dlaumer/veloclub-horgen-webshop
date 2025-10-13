@@ -1,6 +1,7 @@
 import { ShoppingCart as ShoppingCartIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CartItem } from "@/types/shop";
+import { useTranslation } from "@/hooks/useTranslation";
 
 interface ShoppingCartProps {
   items: CartItem[];
@@ -17,6 +18,7 @@ export const ShoppingCart = ({
   onRemoveItem, 
   onCheckout 
 }: ShoppingCartProps) => {
+  const { t } = useTranslation();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
   const delivery = 10.00;
@@ -47,7 +49,7 @@ export const ShoppingCart = ({
           <div className="absolute right-0 top-0 h-full w-full sm:w-96 bg-cart-overlay shadow-xl flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between p-4 border-b border-border">
-              <h2 className="text-lg font-semibold">Cart</h2>
+              <h2 className="text-lg font-semibold">{t('cart')}</h2>
               <button
                 onClick={onToggle}
                 className="p-1 hover:bg-muted rounded-full transition-colors"
@@ -59,7 +61,7 @@ export const ShoppingCart = ({
             {/* Items */}
             <div className="flex-1 overflow-y-auto p-4">
               {items.length === 0 ? (
-                <p className="text-muted-foreground text-center py-8">Your cart is empty</p>
+                <p className="text-muted-foreground text-center py-8">{t('yourCartIsEmpty')}</p>
               ) : (
                 <div className="space-y-4">
                   {items.map((item) => (
@@ -100,15 +102,15 @@ export const ShoppingCart = ({
             {items.length > 0 && (
               <div className="border-t border-border p-4 space-y-2">
                 <div className="flex justify-between text-sm">
-                  <span>Product value</span>
+                  <span>{t('subtotal')}</span>
                   <span>CHF {subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-sm">
-                  <span>Delivery</span>
+                  <span>{t('delivery')}</span>
                   <span>CHF {delivery.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between font-semibold">
-                  <span>Total</span>
+                  <span>{t('total')}</span>
                   <span>CHF {total.toFixed(2)}</span>
                 </div>
                 

@@ -1,4 +1,5 @@
 import { Product } from "@/types/shop";
+import { useTranslation } from "@/hooks/useTranslation";
 
 interface ProductCardProps {
   product: Product;
@@ -6,6 +7,8 @@ interface ProductCardProps {
 }
 
 export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
+  const { t } = useTranslation();
+  
   // Check if product is completely sold out (no stock in any size for any color)
   const isSoldOut = product.colors.every(color => 
     color.sizes.every(size => size.stock === 0)
@@ -26,7 +29,7 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
         />
         {isSoldOut && (
           <div className="absolute top-2 right-2 bg-muted/90 backdrop-blur-sm text-muted-foreground px-3 py-1 rounded-md text-xs font-medium border border-border">
-            Sold Out
+            {t('soldOut')}
           </div>
         )}
       </div>
