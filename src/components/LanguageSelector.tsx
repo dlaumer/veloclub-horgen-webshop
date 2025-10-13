@@ -14,7 +14,7 @@ export const LanguageSelector = () => {
 
   return (
     <Select value={language} onValueChange={(value) => setLanguage(value as Language)}>
-      <SelectTrigger className="w-[70px] h-10 bg-background border-border">
+      <SelectTrigger className="w-[90px] h-10 bg-background border-border">
         <Globe className="h-4 w-4 mr-1" />
         <SelectValue />
       </SelectTrigger>
