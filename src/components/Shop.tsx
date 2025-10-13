@@ -6,24 +6,25 @@ import { ShoppingCart } from "./ShoppingCart";
 // Removed: import { products } from "@/data/products";
 import { Product, CartItem, CartState } from "@/types/shop";
 import { useToast } from "@/hooks/use-toast";
+import { useTranslation } from "@/hooks/useTranslation";
 
 // NEW: pull from the stock API
-import { fetchStock, type Product as StockProduct } from "@/lib/stockApi"; // :contentReference[oaicite:0]{index=0}
-
-const categories = [
-  { id: "all", label: "All" },
-  { id: "men", label: "Man" },
-  { id: "women", label: "Woman" },
-  { id: "kids", label: "Kids" },
-  { id: "others", label: "Others" },
-];
+import { fetchStock, type Product as StockProduct } from "@/lib/stockApi";
 
 export const Shop = () => {
+  const { t } = useTranslation();
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [cart, setCart] = useState<CartState>({ items: [], isOpen: false });
   const { toast } = useToast();
+  
+  const categories = [
+    { id: "all", label: t("all") },
+    { id: "men", label: t("men") },
+    { id: "women", label: t("women") },
+    { id: "kids", label: t("kids") },
+  ];
 
   // NEW: products now come from fetchStock()
   const [allProducts, setAllProducts] = useState<Product[]>([]);

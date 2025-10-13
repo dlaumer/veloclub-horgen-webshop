@@ -3,6 +3,7 @@ import { X, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Product } from "@/types/shop";
 import { cn } from "@/lib/utils";
+import { useTranslation } from "@/hooks/useTranslation";
 
 interface ProductModalProps {
   product: Product | null;
@@ -12,6 +13,7 @@ interface ProductModalProps {
 }
 
 export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductModalProps) => {
+  const { t } = useTranslation();
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
@@ -131,7 +133,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
 
             {/* Color Selection */}
             <div>
-              <h4 className="text-sm font-medium mb-3 text-muted-foreground">Choose colour</h4>
+              <h4 className="text-sm font-medium mb-3 text-muted-foreground">{t('selectColor')}</h4>
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {product.colors.map((color) => (
                   <button
@@ -156,7 +158,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
             {/* Size Selection */}
             <div>
               <h4 className="text-sm font-medium mb-3 text-muted-foreground">
-                Choose size
+                {t('selectSize')}
               </h4>
               <div className="flex gap-2 overflow-x-auto pb-2">
                 {availableSizes.map((size) => (
@@ -187,7 +189,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
               disabled={!canAddToCart}
               className="w-full bg-button-primary hover:bg-button-primary/90 text-button-primary-foreground py-2.5 sm:py-3 text-sm sm:text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Add to cart
+              {t('addToCart')}
             </Button>
           </div>
         </div>
