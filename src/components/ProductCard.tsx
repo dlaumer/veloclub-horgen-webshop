@@ -13,22 +13,20 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
 
   return (
     <div 
-      className={`bg-product-card rounded-lg p-4 transition-transform relative ${
-        isSoldOut ? 'opacity-75 cursor-not-allowed' : 'cursor-pointer hover:scale-105'
+      className={`bg-product-card rounded-lg p-4 cursor-pointer transition-transform hover:scale-105 relative ${
+        isSoldOut ? 'opacity-80' : ''
       }`}
-      onClick={() => !isSoldOut && onProductClick(product)}
+      onClick={() => onProductClick(product)}
     >
       <div className="aspect-square mb-4 flex items-center justify-center bg-white rounded-lg overflow-hidden relative">
         <img
           src={product.image}
           alt={product.name}
-          className={`w-full h-full object-contain ${isSoldOut ? 'grayscale' : ''}`}
+          className={`w-full h-full object-contain ${isSoldOut ? 'opacity-60' : ''}`}
         />
         {isSoldOut && (
-          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-            <div className="bg-destructive text-destructive-foreground px-4 py-2 rounded-md font-semibold text-sm">
-              SOLD OUT
-            </div>
+          <div className="absolute top-2 right-2 bg-muted/90 backdrop-blur-sm text-muted-foreground px-3 py-1 rounded-md text-xs font-medium border border-border">
+            Sold Out
           </div>
         )}
       </div>
