@@ -70,5 +70,45 @@ export const translations = {
   yourCartIsEmpty: {
     en: "Your cart is empty",
     de: "Ihr Warenkorb ist leer"
+  },
+  left: {
+    en: "left",
+    de: "verfügbar"
+  },
+  addedToCart: {
+    en: "Added to cart",
+    de: "Zum Warenkorb hinzugefügt"
+  },
+  hasBeenAddedToCart: {
+    en: "has been added to your cart.",
+    de: "wurde zu Ihrem Warenkorb hinzugefügt."
+  },
+  proceedingToTwint: {
+    en: "Proceeding to TWINT",
+    de: "Weiter zu TWINT"
+  },
+  redirectToTwint: {
+    en: "You will be redirected to TWINT for payment.",
+    de: "Sie werden zur Zahlung zu TWINT weitergeleitet."
+  },
+  size: {
+    en: "Size",
+    de: "Größe"
+  },
+  colour: {
+    en: "Colour",
+    de: "Farbe"
+  },
+  amount: {
+    en: "Amount",
+    de: "Menge"
+  },
+  weAccept: {
+    en: "We accept",
+    de: "Wir akzeptieren"
+  },
+  pay: {
+    en: "Pay",
+    de: "Bezahlen"
   }
 };

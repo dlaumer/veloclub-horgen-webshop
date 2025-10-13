@@ -176,7 +176,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
-                    <span className="text-[10px] sm:text-xs">{size.stock} left</span>
+                    <span className="text-[10px] sm:text-xs">{size.stock} {t('left')}</span>
                   </button>
                 ))}
               </div>

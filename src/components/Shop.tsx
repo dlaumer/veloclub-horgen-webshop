@@ -100,8 +100,8 @@ export const Shop = () => {
     }
 
     toast({
-      title: "Added to cart",
-      description: `${product.name} (${size}, ${color}) has been added to your cart.`,
+      title: t('addedToCart'),
+      description: `${product.name} (${size}, ${color}) ${t('hasBeenAddedToCart')}`,
     });
   };
 
@@ -118,8 +118,8 @@ export const Shop = () => {
 
   const handleCheckout = () => {
     toast({
-      title: "Proceeding to TWINT",
-      description: "You will be redirected to TWINT for payment.",
+      title: t('proceedingToTwint'),
+      description: t('redirectToTwint'),
     });
     // Integrate TWINT here
   };
