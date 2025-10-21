@@ -187,7 +187,8 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
             <Button
               onClick={handleAddToCart}
               disabled={!canAddToCart}
-              className="w-full bg-button-primary hover:bg-button-primary/90 text-button-primary-foreground py-2.5 sm:py-3 text-sm sm:text-base font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+              variant="shop"
+              className="w-full py-2.5 sm:py-3 text-sm sm:text-base font-medium"
             >
               {t('addToCart')}
             </Button>

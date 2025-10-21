@@ -28,20 +28,22 @@ export const ShoppingCart = ({
   return (
     <>
       {/* Cart Button and Language Selector */}
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-2">
+      <div className="fixed top-4 right-4 z-50 flex items-center gap-2 sm:gap-3">
         <LanguageSelector />
-        <div className="relative">
-          <button
+        <div className="relative flex-shrink-0">
+          <Button
             onClick={onToggle}
-            className="flex items-center justify-center w-12 h-12 bg-button-primary text-button-primary-foreground rounded-full shadow-lg hover:scale-105 transition-transform"
+            variant="shop"
+            size="icon"
+            className="w-12 h-12 rounded-full shadow-lg hover:scale-105 transition-transform"
           >
             <ShoppingCartIcon className="h-5 w-5" />
-            {totalItems > 0 && (
-              <span className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold">
-                {totalItems}
-              </span>
-            )}
-          </button>
+          </Button>
+          {totalItems > 0 && (
+            <span className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold pointer-events-none">
+              {totalItems}
+            </span>
+          )}
         </div>
       </div>
 
@@ -133,7 +135,8 @@ export const ShoppingCart = ({
                   
                   <Button 
                     onClick={onCheckout}
-                    className="w-full bg-button-primary hover:bg-button-primary/90 text-button-primary-foreground"
+                    variant="shop"
+                    className="w-full"
                   >
                     {t('pay')}
                   </Button>
