@@ -26,7 +26,7 @@ const App = () => (
       <TooltipProvider>
         <Toaster />
         <Sonner />
-        <BrowserRouter>
+        <BrowserRouter basename="/veloclub-horgen-webshop">
           <Routes>
             <Route path="/thank-you" element={<ThankYouPage />} />
             <Route path="/cancelled" element={<CancelledPage />} />

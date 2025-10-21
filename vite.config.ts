@@ -9,6 +9,7 @@ export default defineConfig(({ mode }) => ({
     host: "::",
     port: 8080,
   },
+  base: '/veloclub-horgen-webshop/', // <-- repo name with leading & trailing slashes
   plugins: [react(), mode === "production" && componentTagger()].filter(Boolean),
   resolve: {
     alias: {
