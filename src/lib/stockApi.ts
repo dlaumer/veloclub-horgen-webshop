@@ -69,6 +69,28 @@ export async function fetchSku(sku: string): Promise<Product> {
   return (json as { ok: true; data: Product }).data;
 }
 
+// src/lib/stockApi.ts (add this)
+type CartLine = { sku: string; size: string; qty: number }; // qty user bought
+
+export async function commitStockOnPay(cart: CartLine[]) {
+  const API_BASE = import.meta.env.VITE_API_BASE!;
+  // Convert purchase quantities to negative deltas
+  const items = cart
+    .filter(l => l.qty > 0)
+    .map(l => ({ sku: l.sku, size: l.size, qty: -Math.abs(l.qty) }));
+
+  if (!items.length) return { ok: true, data: [] };
+
+  const r = await fetch(`${API_BASE}/api/stock-delta`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ items }),
+  });
+  if (!r.ok) throw new Error(`stock-delta failed: ${r.status}`);
+  return r.json(); // { ok:true, data:[ ... grouped stock ... ] }
+}
+
+
 /**
  * Confirm a purchase (after payment). Backend ensures stock is decremented
  * safely using Apps Script + GAS_TOKEN.
