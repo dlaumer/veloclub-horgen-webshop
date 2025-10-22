@@ -139,13 +139,13 @@ export const translations = {
     en: "Name",
     de: "Name"
   },
+  lastName: {
+    en: "Last name",
+    de: "Nachname"
+  },
   email: {
     en: "Email",
     de: "E-Mail"
-  },
-  phone: {
-    en: "Phone",
-    de: "Telefon"
   },
   address: {
     en: "Address",
