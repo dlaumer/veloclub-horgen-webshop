@@ -21,8 +21,8 @@ import { Button } from "@/components/ui/button";
 
 const checkoutSchema = z.object({
   name: z.string().min(1, { message: "Name is required" }),
+  lastName: z.string().min(1, { message: "Last name is required" }),
   email: z.string().email({ message: "Invalid email address" }),
-  phone: z.string().min(1, { message: "Phone is required" }),
   street: z.string().min(1, { message: "Street is required" }),
   city: z.string().min(1, { message: "City is required" }),
   postalCode: z.string().min(1, { message: "Postal code is required" }),
@@ -50,8 +50,8 @@ export const CheckoutForm = ({
     resolver: zodResolver(checkoutSchema),
     defaultValues: {
       name: "",
+      lastName: "",
       email: "",
-      phone: "",
       street: "",
       city: "",
       postalCode: "",
@@ -85,7 +85,19 @@ export const CheckoutForm = ({
                 </FormItem>
               )}
             />
-
+            <FormField
+              control={form.control}
+              name="lastName"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("lastName")}</FormLabel>
+                  <FormControl>
+                    <Input placeholder={t("lastName")} {...field} />
+                  </FormControl>
+                  <FormMessage />
+                </FormItem>
+              )}
+            />
             <FormField
               control={form.control}
               name="email"
@@ -94,20 +106,6 @@ export const CheckoutForm = ({
                   <FormLabel>{t("email")}</FormLabel>
                   <FormControl>
                     <Input type="email" placeholder={t("email")} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="phone"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("phone")}</FormLabel>
-                  <FormControl>
-                    <Input type="tel" placeholder={t("phone")} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
