@@ -10,14 +10,18 @@ interface ShoppingCartProps {
   onToggle: () => void;
   onRemoveItem: (itemId: string) => void;
   onCheckout: () => void;
+  isPaying?: boolean; // <-- NEW
+
 }
 
-export const ShoppingCart = ({ 
-  items, 
-  isOpen, 
-  onToggle, 
-  onRemoveItem, 
-  onCheckout 
+export const ShoppingCart = ({
+  items,
+  isOpen,
+  onToggle,
+  onRemoveItem,
+  onCheckout,
+  isPaying = false, // default
+
 }: ShoppingCartProps) => {
   const { t } = useTranslation();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
@@ -50,8 +54,8 @@ export const ShoppingCart = ({
       {/* Cart Overlay */}
       {isOpen && (
         <div className="fixed inset-0 z-40">
-          <div 
-            className="absolute inset-0 bg-black bg-opacity-50" 
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
             onClick={onToggle}
           />
           <div className="absolute right-0 top-0 h-full w-full sm:w-96 bg-cart-overlay shadow-xl flex flex-col">
@@ -79,17 +83,17 @@ export const ShoppingCart = ({
                         alt={item.name}
                         className="w-16 h-16 object-contain bg-product-card rounded"
                       />
-                       <div className="flex-1">
-                         <h3 className="font-medium text-sm">{item.name}</h3>
-                         <p className="text-xs text-muted-foreground">
-                           {t('size')}: {item.size}
-                         </p>
-                         <p className="text-xs text-muted-foreground">
-                           {t('colour')}: {item.color}
-                         </p>
-                         <p className="text-xs text-muted-foreground">
-                           {t('amount')}: {item.quantity}
-                         </p>
+                      <div className="flex-1">
+                        <h3 className="font-medium text-sm">{item.name}</h3>
+                        <p className="text-xs text-muted-foreground">
+                          {t('size')}: {item.size}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {t('colour')}: {item.color}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          {t('amount')}: {item.quantity}
+                        </p>
                         <p className="font-semibold text-sm mt-1">
                           CHF {item.price.toFixed(2)}
                         </p>
@@ -121,7 +125,7 @@ export const ShoppingCart = ({
                   <span>{t('total')}</span>
                   <span>CHF {total.toFixed(2)}</span>
                 </div>
-                
+
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center gap-2 text-sm">
                     <span>{t('weAccept')}</span>
@@ -132,13 +136,14 @@ export const ShoppingCart = ({
                       TWINT
                     </div>
                   </div>
-                  
-                  <Button 
+
+                  <Button
                     onClick={onCheckout}
+                    disabled={isPaying || items.length === 0}
                     variant="shop"
                     className="w-full"
                   >
-                    {t('pay')}
+                    {isPaying ? t('updatingStock') /* spinner or t('updatingStock') */ : /* t('pay') */ t('pay')}
                   </Button>
                 </div>
               </div>

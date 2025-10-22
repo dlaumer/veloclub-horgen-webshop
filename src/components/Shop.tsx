@@ -1,15 +1,15 @@
+// Shop.tsx
 import { useEffect, useMemo, useState } from "react";
 import { CategoryTabs } from "./CategoryTabs";
 import { ProductCard } from "./ProductCard";
 import { ProductModal } from "./ProductModal";
 import { ShoppingCart } from "./ShoppingCart";
-// Removed: import { products } from "@/data/products";
 import { Product, CartItem, CartState } from "@/types/shop";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 
-// NEW: pull from the stock API
-import { fetchStock, type Product as StockProduct } from "@/lib/stockApi";
+// NEW: stock APIs
+import { fetchStock, type Product as StockProduct, commitStockOnPay } from "@/lib/stockApi"; // <-- add commitStockOnPay
 
 export const Shop = () => {
   const { t } = useTranslation();
@@ -17,8 +17,9 @@ export const Shop = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [cart, setCart] = useState<CartState>({ items: [], isOpen: false });
+  const [isPaying, setIsPaying] = useState(false); // <-- NEW
   const { toast } = useToast();
-  
+
   const categories = [
     { id: "all", label: t("all") },
     { id: "men", label: t("men") },
@@ -26,12 +27,10 @@ export const Shop = () => {
     { id: "kids", label: t("kids") },
   ];
 
-  // NEW: products now come from fetchStock()
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
 
-  // Adapt stock items (sku, imageUrl, etc.) to Shop Product
   const adapt = (s: StockProduct): Product => ({
     id: s.id,
     name: s.name,
@@ -48,19 +47,15 @@ export const Shop = () => {
       .then((stock) => {
         if (!on) return;
         const mapped = stock.map(adapt);
-        console.log(mapped);
         setAllProducts(mapped);
       })
       .catch((e) => on && setErr(String(e)))
       .finally(() => on && setLoading(false));
-    return () => {
-      on = false;
-    };
+    return () => { on = false; };
   }, []);
 
   const filteredProducts = useMemo(() => {
     if (activeCategory === "all") return allProducts;
-    // If products don’t have categories yet, they'll fall under "others"
     return allProducts.filter((p) => p.category === activeCategory);
   }, [activeCategory, allProducts]);
 
@@ -92,7 +87,7 @@ export const Shop = () => {
         price: product.price,
         size,
         color,
-        colorId,
+        colorId,          // 👈 IMPORTANT: this is the SKU per color (article number)
         quantity: 1,
         image: product.image,
       };
@@ -116,16 +111,45 @@ export const Shop = () => {
     setCart((prev) => ({ ...prev, isOpen: !prev.isOpen }));
   };
 
-  const handleCheckout = () => {
-    toast({
-      title: t('proceedingToTwint'),
-      description: t('redirectToTwint'),
-    });
-    // Integrate TWINT here
+  const handleCheckout = async () => {
+    if (isPaying || cart.items.length === 0) return;
+
+    try {
+      setIsPaying(true);
+
+      const lines = cart.items.map(i => ({
+        sku: i.colorId,     // article number per color
+        size: i.size,
+        qty: i.quantity,    // commitStockOnPay will convert to negative deltas
+      }));
+
+      // Call delta endpoint
+      const res = await commitStockOnPay(lines);
+      if (!res.ok) throw new Error(res.error || "Stock update failed");
+
+      // ✅ Use the returned stock directly to refresh UI
+      const mapped = res.data.map(adapt);          // adapt = your StockProduct -> Product mapper
+      setAllProducts(mapped);
+
+      // If the modal is open, refresh the selected product from the new data
+      setSelectedProduct(prev =>
+        prev ? (mapped.find(p => p.id === prev.id) ?? null) : prev
+      );
+
+      // Clear cart + close
+      setCart({ items: [], isOpen: false });
+
+      toast({ title: t('success'), description: t('stockUpdated') });
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: t('error'), description: e?.message || String(e), variant: "destructive" });
+    } finally {
+      setIsPaying(false);
+    }
   };
 
+
   if (loading) {
-    // Loading view while stock is fetched (matches the StockGrid “Loading stock…” pattern) :contentReference[oaicite:1]{index=1}
     return (
       <div className="min-h-screen bg-background p-3 sm:p-6">
         <div className="max-w-6xl mx-auto mb-6 sm:mb-8">
@@ -138,10 +162,7 @@ export const Shop = () => {
         <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
             {Array.from({ length: 6 }).map((_, i) => (
-              <div
-                key={i}
-                className="animate-pulse rounded-2xl border p-4 shadow"
-              >
+              <div key={i} className="animate-pulse rounded-2xl border p-4 shadow">
                 <div className="mb-3 h-40 w-full rounded bg-muted" />
                 <div className="mb-2 h-5 w-2/3 rounded bg-muted" />
                 <div className="mb-2 h-4 w-1/2 rounded bg-muted" />
@@ -167,7 +188,6 @@ export const Shop = () => {
 
   return (
     <div className="min-h-screen bg-background p-3 sm:p-6">
-      {/* Header */}
       <div className="max-w-6xl mx-auto mb-6 sm:mb-8">
         <CategoryTabs
           categories={categories}
@@ -176,7 +196,6 @@ export const Shop = () => {
         />
       </div>
 
-      {/* Product Grid - responsive */}
       <div className="max-w-6xl mx-auto">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
           {filteredProducts.map((product) => (
@@ -189,7 +208,6 @@ export const Shop = () => {
         </div>
       </div>
 
-      {/* Product Modal */}
       <ProductModal
         product={selectedProduct}
         isOpen={isModalOpen}
@@ -200,13 +218,14 @@ export const Shop = () => {
         onAddToCart={handleAddToCart}
       />
 
-      {/* Shopping Cart */}
       <ShoppingCart
         items={cart.items}
         isOpen={cart.isOpen}
         onToggle={handleToggleCart}
         onRemoveItem={handleRemoveFromCart}
         onCheckout={handleCheckout}
+        // NEW: disable Pay while sending
+        isPaying={isPaying}
       />
     </div>
   );

@@ -110,5 +110,21 @@ export const translations = {
   pay: {
     en: "Pay",
     de: "Bezahlen"
+  },
+  updatingStock: {
+    en: "Updating stock…",
+    de: "Bestand wird aktualisiert…"
+  },
+  success: {
+    en: "Success",
+    de: "Erfolg"
+  },
+  stockUpdated: {
+    en: "Stock has been updated.",
+    de: "Der Bestand wurde aktualisiert."
+  },
+  error: {
+    en: "Error",
+    de: "Fehler"
   }
 };

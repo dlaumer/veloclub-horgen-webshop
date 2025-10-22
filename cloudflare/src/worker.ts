@@ -112,15 +112,24 @@ export default {
       }
 
 
-      if (url.pathname === "/api/purchase" && req.method === "POST") {
+      if (url.pathname === "/api/stock-delta" && req.method === "POST") {
+        const origin = req.headers.get("Origin");
+        const allowed = allowlist(env);
+        const cors = corsHeaders(origin, allowed); // keep strict here
+
         const body = await req.text();
-        const target = `${env.GAS_URL}?action=purchase&token=${encodeURIComponent(env.GAS_TOKEN)}`;
+        const target = `${env.GAS_URL}?action=stockDelta&token=${encodeURIComponent(env.GAS_TOKEN)}`;
         const upstream = await fetch(target, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body,
+          body
         });
-        return proxyJson(upstream, corsHeaders(origin, allowed));
+
+        const text = await upstream.text();
+        return new Response(text, {
+          status: upstream.status,
+          headers: { "Content-Type": "application/json", ...cors }
+        });
       }
 
       return new Response(JSON.stringify({ ok: false, error: "Not found" }), {
