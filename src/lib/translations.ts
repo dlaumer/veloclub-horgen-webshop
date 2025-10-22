@@ -126,5 +126,57 @@ export const translations = {
   error: {
     en: "Error",
     de: "Fehler"
+  },
+  checkout: {
+    en: "Checkout",
+    de: "Zur Kasse"
+  },
+  contactDetails: {
+    en: "Contact Details",
+    de: "Kontaktdaten"
+  },
+  name: {
+    en: "Name",
+    de: "Name"
+  },
+  email: {
+    en: "Email",
+    de: "E-Mail"
+  },
+  phone: {
+    en: "Phone",
+    de: "Telefon"
+  },
+  address: {
+    en: "Address",
+    de: "Adresse"
+  },
+  street: {
+    en: "Street",
+    de: "Straße"
+  },
+  city: {
+    en: "City",
+    de: "Stadt"
+  },
+  postalCode: {
+    en: "Postal Code",
+    de: "Postleitzahl"
+  },
+  country: {
+    en: "Country",
+    de: "Land"
+  },
+  proceedToPayment: {
+    en: "Proceed to Payment",
+    de: "Zur Zahlung"
+  },
+  fillAllFields: {
+    en: "Please fill in all fields",
+    de: "Bitte alle Felder ausfüllen"
+  },
+  invalidEmail: {
+    en: "Invalid email address",
+    de: "Ungültige E-Mail-Adresse"
   }
 };

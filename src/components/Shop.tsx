@@ -4,6 +4,7 @@ import { CategoryTabs } from "./CategoryTabs";
 import { ProductCard } from "./ProductCard";
 import { ProductModal } from "./ProductModal";
 import { ShoppingCart } from "./ShoppingCart";
+import { CheckoutForm, CheckoutFormData } from "./CheckoutForm";
 import { Product, CartItem, CartState } from "@/types/shop";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -30,6 +31,8 @@ export const Shop = () => {
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
+  const [isCheckoutFormOpen, setIsCheckoutFormOpen] = useState(false);
+  const [checkoutData, setCheckoutData] = useState<CheckoutFormData | null>(null);
 
   const adapt = (s: StockProduct): Product => ({
     id: s.id,
@@ -111,8 +114,15 @@ export const Shop = () => {
     setCart((prev) => ({ ...prev, isOpen: !prev.isOpen }));
   };
 
-  const handleCheckout = async () => {
-    if (isPaying || cart.items.length === 0) return;
+  const handleCheckout = () => {
+    if (cart.items.length === 0) return;
+    setIsCheckoutFormOpen(true);
+  };
+
+  const handleCheckoutFormSubmit = async (data: CheckoutFormData) => {
+    if (isPaying) return;
+
+    setCheckoutData(data);
 
     try {
       setIsPaying(true);
@@ -138,6 +148,8 @@ export const Shop = () => {
 
       // Clear cart + close
       setCart({ items: [], isOpen: false });
+      setIsCheckoutFormOpen(false);
+      setCheckoutData(null);
 
       toast({ title: t('success'), description: t('stockUpdated') });
     } catch (e: any) {
@@ -224,7 +236,13 @@ export const Shop = () => {
         onToggle={handleToggleCart}
         onRemoveItem={handleRemoveFromCart}
         onCheckout={handleCheckout}
-        // NEW: disable Pay while sending
+        isPaying={isPaying}
+      />
+
+      <CheckoutForm
+        isOpen={isCheckoutFormOpen}
+        onClose={() => setIsCheckoutFormOpen(false)}
+        onSubmit={handleCheckoutFormSubmit}
         isPaying={isPaying}
       />
     </div>

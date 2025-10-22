@@ -143,7 +143,7 @@ export const ShoppingCart = ({
                     variant="shop"
                     className="w-full"
                   >
-                    {isPaying ? t('updatingStock') /* spinner or t('updatingStock') */ : /* t('pay') */ t('pay')}
+                    {t('checkout')}
                   </Button>
                 </div>
               </div>
