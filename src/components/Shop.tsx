@@ -1,7 +1,7 @@
 // Shop.tsx
 import { useEffect, useMemo, useState } from "react";
 import { Header } from "./Header";
-import { FilterBar } from "./FilterBar";
+import { FilterBar, FilterOption } from "./FilterBar";
 import { ProductCard } from "./ProductCard";
 import { ProductModal } from "./ProductModal";
 import { ShoppingCart } from "./ShoppingCart";
@@ -12,6 +12,21 @@ import { useTranslation } from "@/hooks/useTranslation";
 
 // NEW: stock APIs
 import { fetchStock, type Product as StockProduct, commitStockOnPay } from "@/lib/stockApi"; // <-- add commitStockOnPay
+
+// Filter configuration for each main category
+const CATEGORY_FILTERS: Record<string, FilterOption[]> = {
+  velokleider: [
+    { id: "all", labelKey: "all" },
+    { id: "men", labelKey: "men" },
+    { id: "women", labelKey: "women" },
+    { id: "kids", labelKey: "kids" },
+    { id: "others", labelKey: "others" },
+  ],
+  // Add filters for other categories when needed:
+  // "thomus": [...],
+  // "vch": [...],
+  // "sonderkationen": [...],
+};
 
 export const Shop = () => {
   const { t } = useTranslation();
@@ -53,13 +68,17 @@ export const Shop = () => {
     return () => { on = false; };
   }, []);
 
+  // Get filters for current main category
+  const currentFilters = CATEGORY_FILTERS[activeMainCategory] || [];
+
   const filteredProducts = useMemo(() => {
     let filtered = allProducts.filter((p) => p.mainCategory === activeMainCategory);
-    if (activeCategory !== "all") {
+    // Only apply sub-category filter if filters exist and not "all"
+    if (currentFilters.length > 0 && activeCategory !== "all") {
       filtered = filtered.filter((p) => p.category === activeCategory);
     }
     return filtered;
-  }, [activeMainCategory, activeCategory, allProducts]);
+  }, [activeMainCategory, activeCategory, allProducts, currentFilters]);
 
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
@@ -168,12 +187,13 @@ export const Shop = () => {
           onMainCategoryChange={setActiveMainCategory}
         />
         <div className="min-h-screen bg-background p-3 sm:p-6">
-          <div className="max-w-6xl mx-auto">
-            <FilterBar
-              activeCategory={activeCategory}
-              onCategoryChange={setActiveCategory}
-            />
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+        <div className="max-w-6xl mx-auto">
+          <FilterBar
+            activeCategory={activeCategory}
+            onCategoryChange={setActiveCategory}
+            filters={currentFilters}
+          />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="animate-pulse rounded-2xl border p-4 shadow">
                   <div className="mb-3 h-40 w-full rounded bg-muted" />
@@ -217,6 +237,7 @@ export const Shop = () => {
           <FilterBar
             activeCategory={activeCategory}
             onCategoryChange={setActiveCategory}
+            filters={currentFilters}
           />
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
