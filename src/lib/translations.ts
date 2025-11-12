@@ -178,5 +178,9 @@ export const translations = {
   invalidEmail: {
     en: "Invalid email address",
     de: "Ungültige E-Mail-Adresse"
+  },
+  filterBy: {
+    en: "Filter by",
+    de: "Filtern nach"
   }
 };

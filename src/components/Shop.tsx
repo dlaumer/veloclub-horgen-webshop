@@ -1,6 +1,7 @@
 // Shop.tsx
 import { useEffect, useMemo, useState } from "react";
-import { CategoryTabs } from "./CategoryTabs";
+import { Header } from "./Header";
+import { FilterBar } from "./FilterBar";
 import { ProductCard } from "./ProductCard";
 import { ProductModal } from "./ProductModal";
 import { ShoppingCart } from "./ShoppingCart";
@@ -14,19 +15,13 @@ import { fetchStock, type Product as StockProduct, commitStockOnPay } from "@/li
 
 export const Shop = () => {
   const { t } = useTranslation();
+  const [activeMainCategory, setActiveMainCategory] = useState("velokleider");
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [cart, setCart] = useState<CartState>({ items: [], isOpen: false });
   const [isPaying, setIsPaying] = useState(false); // <-- NEW
   const { toast } = useToast();
-
-  const categories = [
-    { id: "all", label: t("all") },
-    { id: "men", label: t("men") },
-    { id: "women", label: t("women") },
-    { id: "kids", label: t("kids") },
-  ];
 
   const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -39,6 +34,7 @@ export const Shop = () => {
     name: s.name,
     price: s.price,
     image: s.image ?? "",
+    mainCategory: "velokleider", // Default to Velokleider for now
     category: s.category,
     colors: s.colors,
   });
@@ -58,9 +54,12 @@ export const Shop = () => {
   }, []);
 
   const filteredProducts = useMemo(() => {
-    if (activeCategory === "all") return allProducts;
-    return allProducts.filter((p) => p.category === activeCategory);
-  }, [activeCategory, allProducts]);
+    let filtered = allProducts.filter((p) => p.mainCategory === activeMainCategory);
+    if (activeCategory !== "all") {
+      filtered = filtered.filter((p) => p.category === activeCategory);
+    }
+    return filtered;
+  }, [activeMainCategory, activeCategory, allProducts]);
 
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
@@ -163,88 +162,100 @@ export const Shop = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-background p-3 sm:p-6">
-        <div className="max-w-6xl mx-auto mb-6 sm:mb-8">
-          <CategoryTabs
-            categories={categories}
-            activeCategory={activeCategory}
-            onCategoryChange={setActiveCategory}
-          />
-        </div>
-        <div className="max-w-6xl mx-auto">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <div key={i} className="animate-pulse rounded-2xl border p-4 shadow">
-                <div className="mb-3 h-40 w-full rounded bg-muted" />
-                <div className="mb-2 h-5 w-2/3 rounded bg-muted" />
-                <div className="mb-2 h-4 w-1/2 rounded bg-muted" />
-                <div className="h-4 w-1/3 rounded bg-muted" />
-              </div>
-            ))}
+      <>
+        <Header
+          activeMainCategory={activeMainCategory}
+          onMainCategoryChange={setActiveMainCategory}
+        />
+        <div className="min-h-screen bg-background p-3 sm:p-6">
+          <div className="max-w-6xl mx-auto">
+            <FilterBar
+              activeCategory={activeCategory}
+              onCategoryChange={setActiveCategory}
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <div key={i} className="animate-pulse rounded-2xl border p-4 shadow">
+                  <div className="mb-3 h-40 w-full rounded bg-muted" />
+                  <div className="mb-2 h-5 w-2/3 rounded bg-muted" />
+                  <div className="mb-2 h-4 w-1/2 rounded bg-muted" />
+                  <div className="h-4 w-1/3 rounded bg-muted" />
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 text-sm text-muted-foreground">Loading stock…</div>
           </div>
-          <div className="mt-6 text-sm text-muted-foreground">Loading stock…</div>
         </div>
-      </div>
+      </>
     );
   }
 
   if (err) {
     return (
-      <div className="min-h-screen bg-background p-6">
-        <div className="max-w-6xl mx-auto text-red-600">
-          Error loading stock: {err}
+      <>
+        <Header
+          activeMainCategory={activeMainCategory}
+          onMainCategoryChange={setActiveMainCategory}
+        />
+        <div className="min-h-screen bg-background p-6">
+          <div className="max-w-6xl mx-auto text-red-600">
+            Error loading stock: {err}
+          </div>
         </div>
-      </div>
+      </>
     );
   }
 
   return (
-    <div className="min-h-screen bg-background p-3 sm:p-6">
-      <div className="max-w-6xl mx-auto mb-6 sm:mb-8">
-        <CategoryTabs
-          categories={categories}
-          activeCategory={activeCategory}
-          onCategoryChange={setActiveCategory}
+    <>
+      <Header
+        activeMainCategory={activeMainCategory}
+        onMainCategoryChange={setActiveMainCategory}
+      />
+      <div className="min-h-screen bg-background p-3 sm:p-6">
+        <div className="max-w-6xl mx-auto">
+          <FilterBar
+            activeCategory={activeCategory}
+            onCategoryChange={setActiveCategory}
+          />
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            {filteredProducts.map((product) => (
+              <ProductCard
+                key={product.id}
+                product={product}
+                onProductClick={handleProductClick}
+              />
+            ))}
+          </div>
+        </div>
+
+        <ProductModal
+          product={selectedProduct}
+          isOpen={isModalOpen}
+          onClose={() => {
+            setIsModalOpen(false);
+            setSelectedProduct(null);
+          }}
+          onAddToCart={handleAddToCart}
+        />
+
+        <ShoppingCart
+          items={cart.items}
+          isOpen={cart.isOpen}
+          onToggle={handleToggleCart}
+          onRemoveItem={handleRemoveFromCart}
+          onCheckout={handleCheckout}
+          isPaying={isPaying}
+        />
+
+        <CheckoutForm
+          isOpen={isCheckoutFormOpen}
+          onClose={() => setIsCheckoutFormOpen(false)}
+          onSubmit={handleCheckoutFormSubmit}
+          isPaying={isPaying}
         />
       </div>
-
-      <div className="max-w-6xl mx-auto">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-          {filteredProducts.map((product) => (
-            <ProductCard
-              key={product.id}
-              product={product}
-              onProductClick={handleProductClick}
-            />
-          ))}
-        </div>
-      </div>
-
-      <ProductModal
-        product={selectedProduct}
-        isOpen={isModalOpen}
-        onClose={() => {
-          setIsModalOpen(false);
-          setSelectedProduct(null);
-        }}
-        onAddToCart={handleAddToCart}
-      />
-
-      <ShoppingCart
-        items={cart.items}
-        isOpen={cart.isOpen}
-        onToggle={handleToggleCart}
-        onRemoveItem={handleRemoveFromCart}
-        onCheckout={handleCheckout}
-        isPaying={isPaying}
-      />
-
-      <CheckoutForm
-        isOpen={isCheckoutFormOpen}
-        onClose={() => setIsCheckoutFormOpen(false)}
-        onSubmit={handleCheckoutFormSubmit}
-        isPaying={isPaying}
-      />
-    </div>
+    </>
   );
 };

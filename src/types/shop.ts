@@ -2,7 +2,8 @@ export interface Product {
   id: string;
   name: string;
   price: number;
-  category:string;
+  mainCategory: string; // Velokleider, Thömus Bike & Parts, etc.
+  category: string; // men, women, kids
   image: string; // Main image for the card
   colors: Array<{
     id: string;
