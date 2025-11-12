@@ -49,7 +49,7 @@ export const Shop = () => {
     name: s.name,
     price: s.price,
     image: s.image ?? "",
-    mainCategory: "velokleider", // Default to Velokleider for now
+    mainCategory: s.mainCategory,
     category: s.category,
     colors: s.colors,
   });

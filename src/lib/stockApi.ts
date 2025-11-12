@@ -10,6 +10,7 @@ export type Product = {
   price: number;
   totalStock: number;
   image?: string;
+  mainCategory: string;
   category: string;
   colors: Array<{
     id: string;
