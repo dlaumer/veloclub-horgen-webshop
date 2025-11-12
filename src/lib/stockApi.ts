@@ -1,7 +1,7 @@
 // src/lib/stockApi.ts
 
 export type SizeKey =
-  | 'XXS' | 'XS' | 'S' | 'M' | 'L' | 'XL'
+  'ONESIZE' | 'XXS' | 'XS' | 'S' | 'M' | 'L' | 'XL'
   | 'XXL' | '3XL' | '4XL' | '5XL';
 
 export type Product = {
