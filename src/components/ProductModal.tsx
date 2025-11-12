@@ -37,7 +37,15 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const selectedColorData = product.colors.find(c => c.name === selectedColor);
   const currentImages = selectedColorData?.images || [product.image];
   const currentImage = currentImages[currentImageIndex] || product.image;
-  const availableSizes = selectedColorData?.sizes || [];
+  
+  // Filter sizes: if ONESIZE exists with stock, only show it; otherwise show all other sizes
+  const allSizes = selectedColorData?.sizes || [];
+  const oneSizeOption = allSizes.find(s => s.name === 'ONESIZE');
+  const hasOneSizeWithStock = oneSizeOption && oneSizeOption.stock > 0;
+  
+  const availableSizes = hasOneSizeWithStock 
+    ? [oneSizeOption] 
+    : allSizes.filter(s => s.name !== 'ONESIZE');
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor && selectedColorData) {
