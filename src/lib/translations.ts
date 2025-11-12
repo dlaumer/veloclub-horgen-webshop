@@ -19,6 +19,10 @@ export const translations = {
     en: "Kids",
     de: "Kinder"
   },
+  others: {
+    en: "Other",
+    de: "Anderes"
+  },
   soldOut: {
     en: "Sold Out",
     de: "Ausverkauft"

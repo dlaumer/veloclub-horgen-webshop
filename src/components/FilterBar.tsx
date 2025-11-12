@@ -15,6 +15,8 @@ export const FilterBar = ({ activeCategory, onCategoryChange }: FilterBarProps) 
     { id: "men", label: t("men") },
     { id: "women", label: t("women") },
     { id: "kids", label: t("kids") },
+    { id: "others", label: t("others") },
+
   ];
 
   return (
