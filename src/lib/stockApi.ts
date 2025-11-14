@@ -41,7 +41,7 @@ export type PurchaseItem = {
 // Base URL of your Cloudflare Worker (safe to expose in frontend)
 const API_BASE =
   import.meta.env.VITE_API_BASE ??
-  'https://veloclub-gas-proxy.daniel-laumer.workers.dev';
+  'https://veloclub-gas-proxy.veloclubhorgenwebshop.workers.dev';
 
 /**
  * Fetch all products with their stock
