@@ -1,6 +1,7 @@
 name = "veloclub-gas-proxy"        # or a new unique name
 main = "src/worker.ts"             # adjust if your entry file differs
 compatibility_date = "2025-01-01"  # any recent date is fine
+PURCHASE_URL = "https://veloclub-gas-proxy.veloclubhorgenwebshop.workers.dev/api/stock-delta"
 
 # IMPORTANT: put the *new* account id here
 account_id = "5d4451651c9669093aa110e025694dce"

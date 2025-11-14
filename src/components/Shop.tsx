@@ -11,7 +11,9 @@ import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
 
 // NEW: stock APIs
-import { fetchStock, type Product as StockProduct, commitStockOnPay } from "@/lib/stockApi"; // <-- add commitStockOnPay
+import { fetchStock, type Product as StockProduct } from "@/lib/stockApi"; // <-- add commitStockOnPay
+
+const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 // Filter configuration for each main category
 const CATEGORY_FILTERS: Record<string, FilterOption[]> = {
@@ -137,46 +139,80 @@ export const Shop = () => {
     setIsCheckoutFormOpen(true);
   };
 
+  function chfToRappen(x: number | string) {
+  // robust gegen "205.50" (string) und float-Rundungsfehler
+  return Math.round(Number(x) * 100);
+}
+
+
   const handleCheckoutFormSubmit = async (data: CheckoutFormData) => {
     if (isPaying) return;
-
-    setCheckoutData(data);
 
     try {
       setIsPaying(true);
 
-      const lines = cart.items.map(i => ({
-        sku: i.colorId,     // article number per color
+      // 1) Map your cart to what the Worker expects
+      const cartPayload = cart.items.map((i) => ({
+        sku: i.colorId,           // your SKU per color/variant
         size: i.size,
-        qty: i.quantity,    // commitStockOnPay will convert to negative deltas
+        qty: i.quantity,
+        name: i.name,
+        unit_amount: chfToRappen(i.price),     // in Rappen (CHF * 100)
+        image: i.image ?? "",
       }));
 
-      // Call delta endpoint
-      const res = await commitStockOnPay(lines);
-      if (!res.ok) throw new Error(res.error || "Stock update failed");
+      if (cartPayload.length === 0) {
+        // show your toast/notice
+        toast({ title: "Warenkorb leer", variant: "destructive" });
+        setIsPaying(false);
+        return;
+      }
 
-      // ✅ Use the returned stock directly to refresh UI
-      const mapped = res.data.map(adapt);          // adapt = your StockProduct -> Product mapper
-      setAllProducts(mapped);
+      // 2) Build customer object (match what you collect on your form)
+      const customer = {
+        name: data.name,
+        lastName: data.lastName,
+        email: data.email,
+        street: data.street,
+        postalCode: data.postalCode,
+        city: data.city,
+        country: data.country
 
-      // If the modal is open, refresh the selected product from the new data
-      setSelectedProduct(prev =>
-        prev ? (mapped.find(p => p.id === prev.id) ?? null) : prev
-      );
+      };
 
-      // Clear cart + close
-      setCart({ items: [], isOpen: false });
-      setIsCheckoutFormOpen(false);
-      setCheckoutData(null);
+      // 3) Create a stable order id (also used as idempotency key server-side)
+      const orderId = `order_${Date.now()}`;
+      console.log(cartPayload)
+      // 4) Call your Worker
+      const res = await fetch(`${API_BASE}/api/checkout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ customer, cart: cartPayload, orderId })
+      });
 
-      toast({ title: t('success'), description: t('stockUpdated') });
-    } catch (e: any) {
-      console.error(e);
-      toast({ title: t('error'), description: e?.message || String(e), variant: "destructive" });
-    } finally {
+      if (!res.ok) {
+        const msg = await res.text();
+        throw new Error(`Checkout init fehlgeschlagen: ${msg}`);
+      }
+
+      const { url } = await res.json();
+
+      // 5) Redirect to Stripe Checkout (QR/App happens there)
+      window.location.href = url;
+
+      // IMPORTANT:
+      // - DO NOT clear cart yet; wait for webhook to book stock.
+      // - On your /thank-you page you can clear cart locally.
+    } catch (err: any) {
+      console.error(err);
+      toast({
+        title: "Fehler beim Checkout",
+        description: err?.message ?? String(err),
+        variant: "destructive"
+      });
       setIsPaying(false);
     }
-  };
+  }
 
 
   if (loading) {
@@ -187,13 +223,13 @@ export const Shop = () => {
           onMainCategoryChange={setActiveMainCategory}
         />
         <div className="min-h-screen bg-background p-3 sm:p-6">
-        <div className="max-w-6xl mx-auto">
-          <FilterBar
-            activeCategory={activeCategory}
-            onCategoryChange={setActiveCategory}
-            filters={currentFilters}
-          />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+          <div className="max-w-6xl mx-auto">
+            <FilterBar
+              activeCategory={activeCategory}
+              onCategoryChange={setActiveCategory}
+              filters={currentFilters}
+            />
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
               {Array.from({ length: 6 }).map((_, i) => (
                 <div key={i} className="animate-pulse rounded-2xl border p-4 shadow">
                   <div className="mb-3 h-40 w-full rounded bg-muted" />
@@ -276,6 +312,7 @@ export const Shop = () => {
           onSubmit={handleCheckoutFormSubmit}
           isPaying={isPaying}
         />
+        event.preventDefault();
       </div>
     </>
   );
