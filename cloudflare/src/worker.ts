@@ -345,25 +345,25 @@ async function handleWebhook(req: Request, env: Env) {
       items: items.map((i) => ({ sku: i.sku, size: i.size, qty: -Math.abs(i.qty) })),
       idempotencyKey: orderId,
     };
-// Call GAS directly, same as /api/stock-delta does
-      const target = gasTarget(env, "stockDelta");
-      const upstream = await fetch(target, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+    // Call GAS directly, same as /api/stock-delta does
+    const target = gasTarget(env, "stockDelta");
+    const upstream = await fetch(target, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
 
-      if (!upstream.ok) {
-        const txt = await upstream.text().catch(() => "");
-        console.error("Webhook: stockDelta call failed", {
-          target,
-          status: upstream.status,
-          body: txt,
-        });
-        // Return 5xx so Stripe retries until stock update succeeds
-        return new Response(`stock commit failed: ${upstream.status} ${txt}`, { status: 500 });
-      }
+    if (!upstream.ok) {
+      const txt = await upstream.text().catch(() => "");
+      console.error("Webhook: stockDelta call failed", {
+        target,
+        status: upstream.status,
+        body: txt,
+      });
+      // Return 5xx so Stripe retries until stock update succeeds
+      return new Response(`stock commit failed: ${upstream.status} ${txt}`, { status: 500 });
     }
+  }
 
   return new Response("ok", { status: 200 });
 }
@@ -394,7 +394,7 @@ async function handleConfirm(req: Request, env: Env) {
   try {
     const parsed = JSON.parse(session?.metadata?.cart || "[]");
     if (Array.isArray(parsed) && parsed.length) items = parsed;
-  } catch {}
+  } catch { }
   if (!items.length) {
     items = await fetchLineItemsFromStripe(session.id, env);
   }
@@ -423,6 +423,48 @@ async function handleConfirm(req: Request, env: Env) {
   return asJSON({ ok: true, orderId, itemsUpdated: items.length });
 }
 
+// GET /api/checkout-session?sid=cs_test_...
+async function handleCheckoutSession(req: Request, env: Env) {
+  const origin = req.headers.get("Origin");
+  const allowed = allowlist(env);
+  const cors = corsHeaders(origin, allowed);
+
+  const url = new URL(req.url);
+  const sid = (url.searchParams.get("sid") || "").trim();
+
+  if (!sid) {
+    return asJSON({ ok: false, error: "Missing sid" }, 400, cors);
+  }
+
+  const stripeRes = await fetch(
+    `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sid)}`,
+    {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
+      },
+    }
+  );
+
+  if (!stripeRes.ok) {
+    const txt = await stripeRes.text().catch(() => "");
+    return asJSON(
+      {
+        ok: false,
+        error: `Stripe session fetch failed: ${stripeRes.status}`,
+        body: txt,
+      },
+      500,
+      cors
+    );
+  }
+
+  const session = await stripeRes.json();
+  // Return Stripe session directly (like your old `json(session)`)
+  return asJSON(session, 200, cors);
+}
+
+
 // ---------- CORS preflight ----------
 function handleOptions(req: Request, env: Env) {
   const origin = req.headers.get("Origin");
@@ -442,7 +484,8 @@ export default {
     if (req.method === "POST" && path === "/api/checkout") return handleCheckout(req, env);
     if (req.method === "POST" && path === "/api/webhook") return handleWebhook(req, env);
     if (req.method === "GET" && path === "/api/confirm") return handleConfirm(req, env);
-
+    if (req.method === "GET" && path === "/api/checkout-session") {return handleCheckoutSession(req, env);}
+    
     // GAS proxies
     if (req.method === "GET" && path === "/api/headers") return handleHeaders(req, env);
     if (req.method === "GET" && path === "/api/stock") return handleStock(req, env, ctx);

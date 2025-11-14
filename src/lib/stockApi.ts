@@ -105,3 +105,11 @@ export async function confirmPurchase(
   if (!res.ok) throw new Error(`Purchase failed: ${res.status}`);
   return res.json(); // will return { ok:true, data:[...] } from Apps Script
 }
+
+export async function fetchCheckoutSession(sid: string): Promise<any> {
+  const url = `${API_BASE}/api/checkout-session?sid=${sid}`;
+  const res = await fetch(url, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Stock fetch failed: ${res.status}`);
+  const json: StockResponse = await res.json();
+  return json
+}
