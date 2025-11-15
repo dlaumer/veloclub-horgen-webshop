@@ -186,5 +186,77 @@ export const translations = {
   filterBy: {
     en: "Filter by",
     de: "Filtern nach"
+  },
+  velokleider: {
+    en: "Cycling Apparel",
+    de: "Velokleider"
+  },
+  thomus: {
+    en: "Thömus Bike & Parts",
+    de: "Thömus Bike & Parts"
+  },
+  vch: {
+    en: "VCH Bike & Parts",
+    de: "VCH Bike & Parts"
+  },
+  sonderkationen: {
+    en: "Special Categories",
+    de: "Sonderkationen"
+  },
+  thankYouTitle: {
+    en: "Thank you for your order! 🎉",
+    de: "Vielen Dank für Ihre Bestellung! 🎉"
+  },
+  loading: {
+    en: "Loading your order…",
+    de: "Ihre Bestellung wird geladen…"
+  },
+  noSessionId: {
+    en: "No session ID provided.",
+    de: "Keine Sitzungs-ID vorhanden."
+  },
+  somethingWentWrong: {
+    en: "Something went wrong:",
+    de: "Etwas ist schief gelaufen:"
+  },
+  orderId: {
+    en: "Order ID:",
+    de: "Bestellnummer:"
+  },
+  amountLabel: {
+    en: "Amount:",
+    de: "Betrag:"
+  },
+  confirmationEmailSent: {
+    en: "A confirmation email has been sent to",
+    de: "Eine Bestätigungs-E-Mail wurde gesendet an"
+  },
+  continueShopping: {
+    en: "Continue Shopping",
+    de: "Weiter einkaufen"
+  },
+  paymentCancelled: {
+    en: "Payment cancelled",
+    de: "Zahlung abgebrochen"
+  },
+  paymentNotCompleted: {
+    en: "Your payment was not completed, so no order was placed.",
+    de: "Ihre Zahlung wurde nicht abgeschlossen, daher wurde keine Bestellung aufgegeben."
+  },
+  tryAgainLater: {
+    en: "You can go back to the shop and try again whenever you're ready.",
+    de: "Sie können zum Shop zurückkehren und es erneut versuchen, wann immer Sie bereit sind."
+  },
+  reason: {
+    en: "Reason:",
+    de: "Grund:"
+  },
+  session: {
+    en: "Session:",
+    de: "Sitzung:"
+  },
+  backToShop: {
+    en: "Back to Shop",
+    de: "Zurück zum Shop"
   }
 };
