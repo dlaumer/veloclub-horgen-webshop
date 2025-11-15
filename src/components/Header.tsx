@@ -10,10 +10,10 @@ export const Header = ({ activeMainCategory, onMainCategoryChange }: HeaderProps
   const { t } = useTranslation();
 
   const mainCategories = [
-    { id: "velokleider", label: "Velokleider" },
-    { id: "thomus", label: "Thömus Bike & Parts" },
-    { id: "vch", label: "VCH Bike & Parts" },
-    { id: "sonderkationen", label: "Sonderkationen" },
+    { id: "velokleider", labelKey: "velokleider" as const },
+    { id: "thomus", labelKey: "thomus" as const },
+    { id: "vch", labelKey: "vch" as const },
+    { id: "sonderkationen", labelKey: "sonderkationen" as const },
   ];
 
   return (
@@ -32,7 +32,7 @@ export const Header = ({ activeMainCategory, onMainCategoryChange }: HeaderProps
                     : "text-muted-foreground hover:text-foreground"
                 )}
               >
-                {category.label}
+                {t(category.labelKey)}
                 {activeMainCategory === category.id && (
                   <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary" />
                 )}
