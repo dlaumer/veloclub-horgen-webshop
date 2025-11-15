@@ -29,9 +29,9 @@ export default function ThankYouPage() {
     }, [sid]);
 
     return (
-        <div className="min-h-screen flex items-center justify-center p-8 bg-background">
-            <div className="max-w-lg w-full text-center bg-white shadow-lg p-8 rounded-2xl">
-                <h1 className="text-3xl font-bold mb-4">Thank you for your order! 🎉</h1>
+        <div className="min-h-screen flex items-center justify-center p-4 sm:p-8 bg-background">
+            <div className="max-w-lg w-full text-center bg-card shadow-lg p-6 sm:p-8 rounded-2xl">
+                <h1 className="text-2xl sm:text-3xl font-bold mb-4 text-foreground">Thank you for your order! 🎉</h1>
 
                 {!sid && <p className="text-red-600">No SID provided.</p>}
 
@@ -44,8 +44,8 @@ export default function ThankYouPage() {
                 )}
 
                 {session && (
-                    <div className="mt-4 text-left">
-                        <p><strong>Order ID:</strong> {session.client_reference_id}</p>
+                    <div className="mt-4 text-left text-foreground">
+                        <p className="break-words"><strong>Order ID:</strong> {session.client_reference_id}</p>
                         {session.amount_total && (
                             <p>
                                 <strong>Amount:</strong>{" "}
@@ -53,7 +53,7 @@ export default function ThankYouPage() {
                             </p>
                         )}
                         {session.customer_details?.email && (
-                            <p className="mt-2 text-sm text-gray-500">
+                            <p className="mt-2 text-sm text-muted-foreground break-words">
                                 A confirmation email has been sent to{" "}
                                 {session.customer_details.email}.
                             </p>
@@ -63,7 +63,7 @@ export default function ThankYouPage() {
 
                 <a
                     href="/"
-                    className="mt-8 inline-block bg-black text-white px-6 py-3 rounded-xl"
+                    className="mt-6 sm:mt-8 inline-block bg-primary text-primary-foreground px-6 py-3 rounded-xl hover:bg-primary/90 transition-colors"
                 >
                     Continue Shopping
                 </a>

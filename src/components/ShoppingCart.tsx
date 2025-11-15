@@ -32,19 +32,19 @@ export const ShoppingCart = ({
   return (
     <>
       {/* Cart Button and Language Selector */}
-      <div className="fixed top-4 right-4 z-50 flex items-center gap-2 sm:gap-3">
+      <div className="fixed top-3 right-3 z-50 flex items-center gap-2">
         <LanguageSelector />
         <div className="relative flex-shrink-0">
           <Button
             onClick={onToggle}
             variant="shop"
             size="icon"
-            className="w-12 h-12 rounded-full shadow-lg hover:scale-105 transition-transform"
+            className="w-11 h-11 sm:w-12 sm:h-12 rounded-full shadow-lg hover:scale-105 transition-transform"
           >
             <ShoppingCartIcon className="h-5 w-5" />
           </Button>
           {totalItems > 0 && (
-            <span className="absolute -top-2 -right-2 bg-accent text-accent-foreground text-xs rounded-full w-6 h-6 flex items-center justify-center font-semibold pointer-events-none">
+            <span className="absolute -top-1 -right-1 sm:-top-2 sm:-right-2 bg-accent text-accent-foreground text-xs rounded-full w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center font-semibold pointer-events-none">
               {totalItems}
             </span>
           )}
