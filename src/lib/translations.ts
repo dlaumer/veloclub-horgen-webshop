@@ -200,8 +200,8 @@ export const translations = {
     de: "VCH Bike & Parts"
   },
   sonderkationen: {
-    en: "Special Categories",
-    de: "Sonderkationen"
+    en: "Special Discounts",
+    de: "Sonderaktionen"
   },
   thankYouTitle: {
     en: "Thank you for your order! 🎉",
