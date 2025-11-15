@@ -2,6 +2,7 @@ import { fetchCheckoutSession } from "@/lib/stockApi";
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useTranslation } from "@/hooks/useTranslation";
+const BASE_URL = import.meta.env.BASE_URL;
 
 export default function ThankYouPage() {
     const { t } = useTranslation();
@@ -64,7 +65,7 @@ export default function ThankYouPage() {
                 )}
 
                 <a
-                    href="/"
+                    href={BASE_URL}
                     className="mt-6 sm:mt-8 inline-block bg-primary text-primary-foreground px-6 py-3 rounded-xl hover:bg-primary/90 transition-colors"
                 >
                     {t('continueShopping')}
