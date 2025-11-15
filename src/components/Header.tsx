@@ -19,14 +19,14 @@ export const Header = ({ activeMainCategory, onMainCategoryChange }: HeaderProps
   return (
     <header className="border-b border-border bg-background sticky top-0 z-40">
       <div className="max-w-6xl mx-auto px-3 sm:px-6">
-        <nav className="flex items-center justify-between py-4">
-          <div className="flex items-center space-x-8">
+        <nav className="py-4 pr-32 sm:pr-0">
+          <div className="flex items-center space-x-6 sm:space-x-8 overflow-x-auto scrollbar-hide">
             {mainCategories.map((category) => (
               <button
                 key={category.id}
                 onClick={() => onMainCategoryChange(category.id)}
                 className={cn(
-                  "text-sm sm:text-base font-semibold transition-colors relative pb-1 whitespace-nowrap",
+                  "text-sm sm:text-base font-semibold transition-colors relative pb-1 whitespace-nowrap flex-shrink-0",
                   activeMainCategory === category.id
                     ? "text-foreground"
                     : "text-muted-foreground hover:text-foreground"
