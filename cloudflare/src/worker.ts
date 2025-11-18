@@ -86,13 +86,21 @@ function urlPath(req: Request) {
 
 // Prefer the site (Referer) as return base; fallback to API origin; allow ENV override
 function buildReturnUrls(req: Request, env: Env) {
-  const ref = req.headers.get("referer");
-  const base = ref ? new URL(ref).origin : new URL(req.url).origin;
+  const ref = req.headers.get("referer") || req.url;
+
+  // Decide base URL:
+  // - if coming from localhost -> http://localhost:8080/
+  // - otherwise -> GitHub Pages URL
+  const base = ref.includes("localhost")
+    ? "http://localhost:8080/"
+    : "https://dlaumer.github.io/veloclub-horgen-webshop/";
+
   return {
-    success: env.SUCCESS_URL || `${base}/thank-you?sid={CHECKOUT_SESSION_ID}`,
-    cancel: env.CANCEL_URL || `${base}/cancelled`,
+    success: env.SUCCESS_URL || `${base}thank-you?sid={CHECKOUT_SESSION_ID}`,
+    cancel: env.CANCEL_URL || `${base}cancelled`,
   };
 }
+
 
 async function verifyStripeSignature(sigHeader: string, raw: string, secret: string) {
   if (!sigHeader || !secret) return false;
@@ -258,7 +266,7 @@ async function handleCheckout(req: Request, env: Env) {
   }
 
   cart.forEach((item, i) => {
-    const title = item.title || `Item ${i + 1}`;
+    const title = item.name || `Item ${i + 1}`;
     form.set(`line_items[${i}][quantity]`, String(item.qty));
     form.set(`line_items[${i}][price_data][currency]`, "chf"); // TWINT requires CHF
     form.set(`line_items[${i}][price_data][unit_amount]`, String(Math.round(Number(item.unit_amount))));
@@ -301,14 +309,23 @@ async function fetchLineItemsFromStripe(sessionId: string, env: Env) {
     throw new Error(`line_items fetch failed: ${res.status} ${t}`);
   }
   const li = await res.json();
-  return (li.data || [])
-    .map((it: any) => ({
-      sku: it?.price?.product?.metadata?.sku || "",
-      size: it?.price?.product?.metadata?.size || "",
+
+  return (li.data || []).map((it: any) => {
+    const product = it?.price?.product;
+    return {
+      sku: product?.metadata?.sku || "",
+      size: product?.metadata?.size || "",
       qty: it?.quantity || 0,
-    }))
-    .filter((x: any) => x.sku && x.size && x.qty > 0);
+      title: product?.name || it?.description || "",
+      image: product?.images?.[0] || undefined,
+      unit_amount:
+        (it?.amount_total && it?.quantity)
+          ? Math.round(it.amount_total / it.quantity)
+          : it?.price?.unit_amount || 0,
+    };
+  });
 }
+
 
 // POST /api/webhook (Stripe → us): verify signature, update stock via PURCHASE_URL
 async function handleWebhook(req: Request, env: Env) {
@@ -362,6 +379,75 @@ async function handleWebhook(req: Request, env: Env) {
       });
       // Return 5xx so Stripe retries until stock update succeeds
       return new Response(`stock commit failed: ${upstream.status} ${txt}`, { status: 500 });
+    }
+
+    /**
+ * --- SEND ORDER CONFIRMATION VIA GOOGLE APPS SCRIPT ---
+ * We try to build a solid "order" object for the confirmation email.
+ * Prefer data from your payment session (Stripe/TWINT), falling back to what's in `payload`.
+ * - Do NOT fail the webhook if the email fails. Just log and continue.
+ */
+    try {
+      // If your code already has a session object from Stripe:
+      // const email = session?.customer_details?.email || session?.customer_email;
+      // const name  = session?.customer_details?.name  || payload?.customer?.name || "Customer";
+      // inside the try { ... } where you build the email
+      const customer = session?.metadata?.customer
+        ? JSON.parse(session.metadata.customer)
+        : null;
+
+      let items: any[] = [];
+      try {
+        // rich data from Stripe
+        items = await fetchLineItemsFromStripe(session.id, env);
+      } catch (e) {
+        // fallback to compact metadata.cart if Stripe call fails
+        const cart = session?.metadata?.cart
+          ? JSON.parse(session.metadata.cart)
+          : [];
+        items = cart;
+      }
+
+      const email = customer?.email;
+      const name = (customer?.name + " " + customer?.lastName) || "Customer";
+
+      const currency = session?.currency || "CHF";
+      const orderId =
+        (session?.metadata?.orderId as string) || (session?.id as string);
+      const total = (session?.amount_total || 0) / 100;
+
+      const emailBody = {
+        action: "sendOrderEmail",
+        order: {
+          orderId,
+          name,
+          email,
+          currency,
+          total,
+          items, // now includes title/image/unit_amount
+        },
+      };
+
+      // Call your Apps Script email endpoint
+      const emailTarget = gasTarget(env, "sendOrderEmail"); // same base as stockDelta but different "route" helper
+      const emailResp = await fetch(emailTarget, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(emailBody),
+      });
+
+      if (!emailResp.ok) {
+        const txt = await emailResp.text().catch(() => "");
+        console.error("Webhook: sendOrderEmail failed", {
+          emailTarget,
+          status: emailResp.status,
+          body: txt,
+        });
+        // DO NOT throw — we don't want to fail the webhook because of email
+      }
+    } catch (err) {
+      console.error("Webhook: sendOrderEmail threw", err);
+      // swallow error to avoid breaking the webhook
     }
   }
 
@@ -484,8 +570,8 @@ export default {
     if (req.method === "POST" && path === "/api/checkout") return handleCheckout(req, env);
     if (req.method === "POST" && path === "/api/webhook") return handleWebhook(req, env);
     if (req.method === "GET" && path === "/api/confirm") return handleConfirm(req, env);
-    if (req.method === "GET" && path === "/api/checkout-session") {return handleCheckoutSession(req, env);}
-    
+    if (req.method === "GET" && path === "/api/checkout-session") { return handleCheckoutSession(req, env); }
+
     // GAS proxies
     if (req.method === "GET" && path === "/api/headers") return handleHeaders(req, env);
     if (req.method === "GET" && path === "/api/stock") return handleStock(req, env, ctx);
@@ -498,3 +584,4 @@ export default {
     return asJSON({ ok: false, error: "Not found" }, 404, corsHeaders(origin, allowed));
   },
 };
+
