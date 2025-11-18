@@ -1,5 +1,6 @@
 // Shop.tsx
 import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { Header } from "./Header";
 import { FilterBar, FilterOption } from "./FilterBar";
 import { ProductCard } from "./ProductCard";
@@ -32,7 +33,11 @@ const CATEGORY_FILTERS: Record<string, FilterOption[]> = {
 
 export const Shop = () => {
   const { t } = useTranslation();
-  const [activeMainCategory, setActiveMainCategory] = useState("velokleider");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [activeMainCategory, setActiveMainCategory] = useState(() => {
+    const rubrik = searchParams.get("rubrik");
+    return rubrik || "velokleider";
+  });
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -69,6 +74,12 @@ export const Shop = () => {
       .finally(() => on && setLoading(false));
     return () => { on = false; };
   }, []);
+
+  const handleMainCategoryChange = (category: string) => {
+    setActiveMainCategory(category);
+    setActiveCategory("all");
+    setSearchParams({ rubrik: category });
+  };
 
   // Get filters for current main category
   const currentFilters = CATEGORY_FILTERS[activeMainCategory] || [];
@@ -220,7 +231,7 @@ export const Shop = () => {
       <>
         <Header
           activeMainCategory={activeMainCategory}
-          onMainCategoryChange={setActiveMainCategory}
+          onMainCategoryChange={handleMainCategoryChange}
         />
         <div className="min-h-screen bg-background p-3 sm:p-6">
           <div className="max-w-6xl mx-auto">
@@ -251,7 +262,7 @@ export const Shop = () => {
       <>
         <Header
           activeMainCategory={activeMainCategory}
-          onMainCategoryChange={setActiveMainCategory}
+          onMainCategoryChange={handleMainCategoryChange}
         />
         <div className="min-h-screen bg-background p-6">
           <div className="max-w-6xl mx-auto text-red-600">
@@ -266,7 +277,7 @@ export const Shop = () => {
     <>
       <Header
         activeMainCategory={activeMainCategory}
-        onMainCategoryChange={setActiveMainCategory}
+        onMainCategoryChange={handleMainCategoryChange}
       />
       <div className="min-h-screen bg-background p-3 sm:p-6">
         <div className="max-w-6xl mx-auto">
