@@ -1,5 +1,6 @@
 import { useTranslation } from "@/hooks/useTranslation";
 import { cn } from "@/lib/utils";
+import logo from "@/assets/logo.png";
 
 interface HeaderProps {
   activeMainCategory: string;
@@ -21,6 +22,7 @@ export const Header = ({ activeMainCategory, onMainCategoryChange }: HeaderProps
       <div className="max-w-6xl mx-auto px-3 sm:px-6">
         <nav className="py-4 pr-32 sm:pr-0">
           <div className="flex items-center space-x-6 sm:space-x-8 overflow-x-auto scrollbar-hide">
+            <img src={logo} alt="Veloclub Horgen Logo" className="h-10 w-10 flex-shrink-0" />
             {mainCategories.map((category) => (
               <button
                 key={category.id}
