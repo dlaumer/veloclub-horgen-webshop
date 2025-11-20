@@ -40,12 +40,12 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const currentImages = selectedColorData?.images || [product.image];
   const currentImage = currentImages[currentImageIndex] || product.image;
   
-  // Filter sizes: if ONESIZE exists with stock, only show it; otherwise show all other sizes
+  // Filter sizes: if ONESIZE exists with non-null stock, only show it; otherwise show all other sizes
   const allSizes = selectedColorData?.sizes || [];
   const oneSizeOption = allSizes.find(s => s.name === 'ONESIZE');
-  const hasOneSizeWithStock = oneSizeOption && oneSizeOption.stock > 0;
+  const hasOneSizeAvailable = oneSizeOption && oneSizeOption.stock !== null;
   
-  const availableSizes = hasOneSizeWithStock 
+  const availableSizes = hasOneSizeAvailable 
     ? [oneSizeOption] 
     : allSizes.filter(s => s.name !== 'ONESIZE');
 
@@ -193,7 +193,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
-                    {size.stock > 0 && (
+                    {size.stock != null && size.stock > 0 && (
                       <span className="text-[10px] sm:text-xs">{size.stock} {t('left')}</span>
                     )}
                   </button>
@@ -223,7 +223,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                {selectedSizeStock > 0 && (
+                {selectedSizeStock != null && selectedSizeStock > 0 && (
                   <span className="text-sm text-muted-foreground">
                     {t('maxAvailable')}: {selectedSizeStock}
                   </span>
