@@ -76,8 +76,8 @@ export const translations = {
     de: "Ihr Warenkorb ist leer"
   },
   left: {
-    en: "left",
-    de: "verfügbar"
+    en: "in stock",
+    de: "auf Lager"
   },
   addedToCart: {
     en: "Added to cart",
@@ -264,7 +264,7 @@ export const translations = {
     de: "Anzahl"
   },
   maxAvailable: {
-    en: "Max available",
-    de: "Max. verfügbar"
+    en: "Max in stock",
+    de: "Max. auf Lager"
   }
 };
