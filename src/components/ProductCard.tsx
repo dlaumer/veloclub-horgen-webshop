@@ -16,9 +16,7 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
 
   return (
     <div 
-      className={`bg-product-card rounded-lg p-4 cursor-pointer transition-transform hover:scale-105 relative ${
-        isSoldOut ? 'opacity-60 grayscale' : ''
-      }`}
+      className="bg-product-card rounded-lg p-4 cursor-pointer transition-transform hover:scale-105 relative"
       onClick={() => onProductClick(product)}
     >
       <div className="aspect-square mb-4 flex items-center justify-center bg-white rounded-lg overflow-hidden relative">
@@ -27,11 +25,6 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
           alt={product.name}
           className="w-full h-full object-contain"
         />
-        {isSoldOut && (
-          <div className="absolute top-2 right-2 bg-muted/90 backdrop-blur-sm text-muted-foreground px-3 py-1 rounded-md text-xs font-medium border border-border">
-            {t('soldOut')}
-          </div>
-        )}
       </div>
       
       <h3 className="font-medium text-product-card-foreground mb-2 text-sm">

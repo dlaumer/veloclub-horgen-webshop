@@ -57,9 +57,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   };
 
   const handleIncreaseQuantity = () => {
-    if (quantity < selectedSizeStock) {
-      setQuantity(prev => prev + 1);
-    }
+    setQuantity(prev => prev + 1);
   };
 
   const handleDecreaseQuantity = () => {
@@ -81,7 +79,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   };
 
   const selectedSizeStock = availableSizes.find(s => s.name === selectedSize)?.stock || 0;
-  const canAddToCart = selectedSize && selectedColor && selectedSizeStock > 0;
+  const canAddToCart = selectedSize && selectedColor;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -187,14 +185,11 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                   <button
                     key={size.name}
                     onClick={() => setSelectedSize(size.name)}
-                    disabled={size.stock === 0}
                     className={cn(
                       "w-14 h-14 sm:w-16 sm:h-16 rounded border transition-all flex-shrink-0 flex flex-col items-center justify-center",
-                      size.stock === 0
-                        ? "border-border bg-muted text-muted-foreground cursor-not-allowed opacity-50"
-                        : selectedSize === size.name
-                          ? "border-primary bg-primary text-primary-foreground"
-                          : "border-border bg-size-button hover:border-muted-foreground"
+                      selectedSize === size.name
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border bg-size-button hover:border-muted-foreground"
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
@@ -224,14 +219,15 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                   variant="outline"
                   size="icon"
                   onClick={handleIncreaseQuantity}
-                  disabled={quantity >= selectedSizeStock || selectedSizeStock === 0}
                   className="h-10 w-10"
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                <span className="text-sm text-muted-foreground">
-                  {t('maxAvailable')}: {selectedSizeStock}
-                </span>
+                {selectedSizeStock > 0 && (
+                  <span className="text-sm text-muted-foreground">
+                    {t('maxAvailable')}: {selectedSizeStock}
+                  </span>
+                )}
               </div>
             </div>
 
