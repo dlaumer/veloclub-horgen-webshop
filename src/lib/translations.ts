@@ -258,5 +258,13 @@ export const translations = {
   backToShop: {
     en: "Back to Shop",
     de: "Zurück zum Shop"
+  },
+  quantity: {
+    en: "Quantity",
+    de: "Anzahl"
+  },
+  maxAvailable: {
+    en: "Max available",
+    de: "Max. verfügbar"
   }
 };
