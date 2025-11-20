@@ -25,9 +25,7 @@ export const ShoppingCart = ({
 }: ShoppingCartProps) => {
   const { t } = useTranslation();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  const delivery = 10.00;
-  const total = subtotal + delivery;
+  const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
 
   return (
     <>
@@ -113,14 +111,6 @@ export const ShoppingCart = ({
             {/* Summary */}
             {items.length > 0 && (
               <div className="border-t border-border p-4 space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>{t('subtotal')}</span>
-                  <span>CHF {subtotal.toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between text-sm">
-                  <span>{t('delivery')}</span>
-                  <span>CHF {delivery.toFixed(2)}</span>
-                </div>
                 <div className="flex justify-between font-semibold">
                   <span>{t('total')}</span>
                   <span>CHF {total.toFixed(2)}</span>
