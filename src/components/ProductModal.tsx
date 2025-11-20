@@ -191,14 +191,16 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                     className={cn(
                       "w-14 h-14 sm:w-16 sm:h-16 rounded border transition-all flex-shrink-0 flex flex-col items-center justify-center",
                       size.stock === 0
-                        ? "border-border bg-muted text-muted-foreground cursor-not-allowed"
+                        ? "border-border bg-muted text-muted-foreground cursor-not-allowed opacity-50"
                         : selectedSize === size.name
                           ? "border-primary bg-primary text-primary-foreground"
                           : "border-border bg-size-button hover:border-muted-foreground"
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
-                    <span className="text-[10px] sm:text-xs">{size.stock} {t('left')}</span>
+                    {size.stock > 0 && (
+                      <span className="text-[10px] sm:text-xs">{size.stock} {t('left')}</span>
+                    )}
                   </button>
                 ))}
               </div>
