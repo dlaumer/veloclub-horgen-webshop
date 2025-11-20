@@ -98,7 +98,7 @@ export const Shop = () => {
     setIsModalOpen(true);
   };
 
-  const handleAddToCart = (productId: string, size: string, color: string, colorId: string) => {
+  const handleAddToCart = (productId: string, size: string, color: string, colorId: string, quantity: number = 1) => {
     const product = allProducts.find((p) => p.id === productId);
     if (!product) return;
 
@@ -111,7 +111,7 @@ export const Shop = () => {
 
     if (existingItemIndex >= 0) {
       const updatedItems = [...cart.items];
-      updatedItems[existingItemIndex].quantity += 1;
+      updatedItems[existingItemIndex].quantity += quantity;
       setCart((prev) => ({ ...prev, items: updatedItems }));
     } else {
       const newItem: CartItem = {
@@ -122,7 +122,7 @@ export const Shop = () => {
         size,
         color,
         colorId,          // 👈 IMPORTANT: this is the SKU per color (article number)
-        quantity: 1,
+        quantity: quantity,
         image: product.image,
       };
       setCart((prev) => ({ ...prev, items: [...prev.items, newItem] }));

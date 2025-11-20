@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { X, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, ChevronLeft, ChevronRight, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Product } from "@/types/shop";
 import { cn } from "@/lib/utils";
@@ -9,7 +9,7 @@ interface ProductModalProps {
   product: Product | null;
   isOpen: boolean;
   onClose: () => void;
-  onAddToCart: (productId: string, size: string, color: string, colorId: string) => void;
+  onAddToCart: (productId: string, size: string, color: string, colorId: string, quantity: number) => void;
 }
 
 export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductModalProps) => {
@@ -17,6 +17,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [quantity, setQuantity] = useState(1);
 
   // Initialize selections when product changes - MUST be before conditional returns
   React.useEffect(() => {
@@ -24,6 +25,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
       setSelectedColor(product.colors[0]?.name || '');
       setSelectedSize('');
       setCurrentImageIndex(0);
+      setQuantity(1);
     }
   }, [product]);
 
@@ -49,8 +51,20 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor && selectedColorData) {
-      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id);
+      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity);
       onClose();
+    }
+  };
+
+  const handleIncreaseQuantity = () => {
+    if (quantity < selectedSizeStock) {
+      setQuantity(prev => prev + 1);
+    }
+  };
+
+  const handleDecreaseQuantity = () => {
+    if (quantity > 1) {
+      setQuantity(prev => prev - 1);
     }
   };
 
@@ -190,6 +204,34 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
               </div>
             </div>
 
+            {/* Quantity Selection */}
+            <div>
+              <h4 className="text-sm font-medium mb-3 text-muted-foreground">{t('quantity')}</h4>
+              <div className="flex items-center gap-4">
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleDecreaseQuantity}
+                  disabled={quantity <= 1}
+                  className="h-10 w-10"
+                >
+                  <Minus className="h-4 w-4" />
+                </Button>
+                <span className="text-xl font-semibold min-w-[3ch] text-center">{quantity}</span>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  onClick={handleIncreaseQuantity}
+                  disabled={quantity >= selectedSizeStock || selectedSizeStock === 0}
+                  className="h-10 w-10"
+                >
+                  <Plus className="h-4 w-4" />
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  {t('maxAvailable')}: {selectedSizeStock}
+                </span>
+              </div>
+            </div>
 
             {/* Add to Cart Button */}
             <Button
