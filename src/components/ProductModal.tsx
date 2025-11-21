@@ -214,7 +214,8 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                       "w-14 h-14 sm:w-16 sm:h-16 rounded border transition-all flex-shrink-0 flex flex-col items-center justify-center",
                       selectedSize === size.name
                         ? "border-primary bg-primary text-primary-foreground"
-                        : "border-border bg-size-button hover:border-muted-foreground"
+                        : "border-border bg-size-button hover:border-muted-foreground",
+                      "disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border"
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
