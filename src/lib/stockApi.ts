@@ -20,6 +20,7 @@ export type Product = {
     sizes: Array<{
       name: SizeKey;
       stock: number;
+      justStock?: string;
     }>;
   }>;
 };
