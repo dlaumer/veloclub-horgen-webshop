@@ -209,6 +209,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                   <button
                     key={size.name}
                     onClick={() => setSelectedSize(size.name)}
+                    disabled={enforceStockLimit && size.stock === 0 || size.stock == null}
                     className={cn(
                       "w-14 h-14 sm:w-16 sm:h-16 rounded border transition-all flex-shrink-0 flex flex-col items-center justify-center",
                       selectedSize === size.name
@@ -217,7 +218,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
-                    {size.stock != null && (size.stock > 0 || size.justStock === 'yes') && (
+                    {(enforceStockLimit && size.stock!=null || (size.stock != null && (size.stock > 0 || size.justStock === 'yes'))) && (
                       <span className="text-[10px] sm:text-xs">{size.stock} {t('left')}</span>
                     )}
                   </button>
@@ -248,11 +249,6 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                {selectedSizeStock != null && (selectedSizeStock > 0 || enforceStockLimit) && (
-                  <span className="text-sm text-muted-foreground">
-                    {t('maxAvailable')}: {selectedSizeStock}
-                  </span>
-                )}
               </div>
             </div>
 
