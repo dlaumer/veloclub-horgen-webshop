@@ -34,6 +34,26 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
     setCurrentImageIndex(0);
   }, [selectedColor]);
 
+  // Auto-select size if there's only one available
+  React.useEffect(() => {
+    if (product && selectedColor) {
+      const colorData = product.colors.find(c => c.name === selectedColor);
+      if (colorData) {
+        const allSizes = colorData.sizes || [];
+        const oneSizeOption = allSizes.find(s => s.name === 'ONESIZE');
+        const hasOneSizeAvailable = oneSizeOption && oneSizeOption.stock !== null;
+        
+        const availableSizes = hasOneSizeAvailable 
+          ? [oneSizeOption] 
+          : allSizes.filter(s => s.name !== 'ONESIZE');
+        
+        if (availableSizes.length === 1) {
+          setSelectedSize(availableSizes[0].name);
+        }
+      }
+    }
+  }, [product, selectedColor]);
+
   if (!isOpen || !product) return null;
 
   const selectedColorData = product.colors.find(c => c.name === selectedColor);
