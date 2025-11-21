@@ -13,6 +13,7 @@ export interface Product {
     sizes: Array<{
       name: string;
       stock: number;
+      justStock?: string;
     }>;
   }>;
   description?: string;
