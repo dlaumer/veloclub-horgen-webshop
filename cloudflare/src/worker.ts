@@ -265,7 +265,7 @@ async function handleCheckout(req: Request, env: Env) {
     form.set("metadata[customer]", JSON.stringify(buyer));
   }
 
-  cart.forEach((item, i) => {
+  cart.forEach((item, i) => { 
     const title = item.name || `Item ${i + 1}`;
     form.set(`line_items[${i}][quantity]`, String(item.qty));
     form.set(`line_items[${i}][price_data][currency]`, "chf"); // TWINT requires CHF
@@ -332,6 +332,7 @@ async function handleWebhook(req: Request, env: Env) {
   const raw = await req.text(); // RAW body required
   const sig = req.headers.get("stripe-signature") || "";
   const valid = await verifyStripeSignature(sig, raw, env.STRIPE_WEBHOOK_SECRET);
+  let payload = null;
   if (!valid) return new Response("bad signature", { status: 400 });
 
   const event = JSON.parse(raw);
@@ -357,7 +358,7 @@ async function handleWebhook(req: Request, env: Env) {
       items = await fetchLineItemsFromStripe(session.id, env);
     }
 
-    const payload = {
+    payload = {
       // negative quantities, as your GAS expects
       items: items.map((i) => ({ sku: i.sku, size: i.size, qty: -Math.abs(i.qty) })),
       idempotencyKey: orderId,
@@ -451,7 +452,7 @@ async function handleWebhook(req: Request, env: Env) {
     }
   }
 
-  return new Response("ok", { status: 200 });
+  return new Response(`${JSON.stringify(payload)})`, { status: 200 });
 }
 
 // Optional: GET /api/confirm?sid=cs_...  (for thank-you UX)

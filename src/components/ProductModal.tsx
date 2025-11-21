@@ -100,8 +100,9 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
 
   const selectedSizeData = availableSizes.find(s => s.name === selectedSize);
   const selectedSizeStock = selectedSizeData?.stock || 0;
-  const selectedSizeJustStock = selectedSizeData?.justStock;
-  const enforceStockLimit = selectedSizeJustStock === 'yes';
+  const selectedSizeJustStock = product?.justStock;
+  const enforceStockLimit = selectedSizeJustStock == 'yes';
+  console.log(product)
   const canAddToCart = selectedSize && selectedColor && (!enforceStockLimit || quantity <= selectedSizeStock);
 
   return (
