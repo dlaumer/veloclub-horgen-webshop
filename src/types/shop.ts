@@ -3,6 +3,7 @@ export interface Product {
   name: string;
   price: number;
   mainCategory: string; // Velokleider, Thömus Bike & Parts, etc.
+  justStock?: string; // 'yes' | 'no' | undefined
   category: string; // men, women, kids
   image: string; // Main image for the card
   colors: Array<{

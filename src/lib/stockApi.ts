@@ -12,6 +12,7 @@ export type Product = {
   image?: string;
   mainCategory: string;
   category: string;
+  justStock?: string;
   colors: Array<{
     id: string;
     name: string;

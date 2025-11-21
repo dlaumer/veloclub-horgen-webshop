@@ -59,6 +59,7 @@ export const Shop = () => {
     mainCategory: s.mainCategory,
     category: s.category,
     colors: s.colors,
+    justStock: s.justStock,
   });
 
   useEffect(() => {
