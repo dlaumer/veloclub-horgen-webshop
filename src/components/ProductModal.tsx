@@ -217,7 +217,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
-                    {size.stock != null && size.stock > 0 && (
+                    {size.stock != null && (size.stock > 0 || size.justStock === 'yes') && (
                       <span className="text-[10px] sm:text-xs">{size.stock} {t('left')}</span>
                     )}
                   </button>
@@ -248,7 +248,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                 >
                   <Plus className="h-4 w-4" />
                 </Button>
-                {selectedSizeStock != null && selectedSizeStock > 0 && (
+                {selectedSizeStock != null && (selectedSizeStock > 0 || enforceStockLimit) && (
                   <span className="text-sm text-muted-foreground">
                     {t('maxAvailable')}: {selectedSizeStock}
                   </span>
