@@ -98,8 +98,11 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
     );
   };
 
-  const selectedSizeStock = availableSizes.find(s => s.name === selectedSize)?.stock || 0;
-  const canAddToCart = selectedSize && selectedColor;
+  const selectedSizeData = availableSizes.find(s => s.name === selectedSize);
+  const selectedSizeStock = selectedSizeData?.stock || 0;
+  const selectedSizeJustStock = selectedSizeData?.justStock;
+  const enforceStockLimit = selectedSizeJustStock === 'yes';
+  const canAddToCart = selectedSize && selectedColor && (!enforceStockLimit || quantity <= selectedSizeStock);
 
   return (
     <div className="fixed inset-0 z-50">
@@ -239,6 +242,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                   variant="outline"
                   size="icon"
                   onClick={handleIncreaseQuantity}
+                  disabled={enforceStockLimit && quantity >= selectedSizeStock}
                   className="h-10 w-10"
                 >
                   <Plus className="h-4 w-4" />
