@@ -209,7 +209,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                   <button
                     key={size.name}
                     onClick={() => setSelectedSize(size.name)}
-                    disabled={enforceStockLimit && size.stock === 0 || size.stock == null}
+                    disabled={enforceStockLimit && (size.stock === 0 || size.stock == null)}
                     className={cn(
                       "w-14 h-14 sm:w-16 sm:h-16 rounded border transition-all flex-shrink-0 flex flex-col items-center justify-center",
                       selectedSize === size.name
