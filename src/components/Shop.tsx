@@ -324,7 +324,6 @@ export const Shop = () => {
           onSubmit={handleCheckoutFormSubmit}
           isPaying={isPaying}
         />
-        event.preventDefault();
       </div>
     </>
   );
