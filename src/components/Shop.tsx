@@ -60,6 +60,7 @@ export const Shop = () => {
     category: s.category,
     colors: s.colors,
     justStock: s.justStock,
+    description: s.description,
   });
 
   useEffect(() => {
