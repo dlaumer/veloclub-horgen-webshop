@@ -175,6 +175,17 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
               <p className="text-xl sm:text-2xl font-bold">CHF {product.price.toFixed(2)}</p>
             </div>
 
+            {/* Description */}
+            {product.description && product.description.trim() !== '' && (
+              <div className="text-sm text-muted-foreground">
+                {product.description.includes('<') && product.description.includes('>') ? (
+                  <div dangerouslySetInnerHTML={{ __html: product.description }} />
+                ) : (
+                  <p>{product.description}</p>
+                )}
+              </div>
+            )}
+
             {/* Color Selection */}
             <div>
               <h4 className="text-sm font-medium mb-3 text-muted-foreground">{t('selectColor')}</h4>
