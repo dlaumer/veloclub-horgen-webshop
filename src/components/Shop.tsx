@@ -36,7 +36,7 @@ export const Shop = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [activeMainCategory, setActiveMainCategory] = useState(() => {
     const rubrik = searchParams.get("rubrik");
-    return rubrik || "velokleider";
+    return rubrik || "thomus";
   });
   const [activeCategory, setActiveCategory] = useState("all");
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
