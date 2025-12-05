@@ -9,7 +9,7 @@ interface ProductModalProps {
   product: Product | null;
   isOpen: boolean;
   onClose: () => void;
-  onAddToCart: (productId: string, size: string, color: string, colorId: string, quantity: number) => void;
+  onAddToCart: (productId: string, size: string, color: string, colorId: string, quantity: number, image: string) => void;
 }
 
 export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductModalProps) => {
@@ -71,7 +71,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor && selectedColorData) {
-      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity);
+      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity, currentImage);
       onClose();
     }
   };
