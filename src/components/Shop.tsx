@@ -100,7 +100,7 @@ export const Shop = () => {
     setIsModalOpen(true);
   };
 
-  const handleAddToCart = (productId: string, size: string, color: string, colorId: string, quantity: number = 1) => {
+  const handleAddToCart = (productId: string, size: string, color: string, colorId: string, quantity: number = 1, image: string) => {
     const product = allProducts.find((p) => p.id === productId);
     if (!product) return;
 
@@ -125,7 +125,7 @@ export const Shop = () => {
         color,
         colorId,          // 👈 IMPORTANT: this is the SKU per color (article number)
         quantity: quantity,
-        image: product.image,
+        image: image,
       };
       setCart((prev) => ({ ...prev, items: [...prev.items, newItem] }));
     }
