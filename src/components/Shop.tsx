@@ -194,7 +194,7 @@ export const Shop = () => {
       };
 
       // 3) Create a stable order id (also used as idempotency key server-side)
-      const orderId = `order_${Date.now()}`;
+      const orderId = `${Date.now()}`;
       console.log(cartPayload)
       // 4) Call your Worker
       const res = await fetch(`${API_BASE}/api/checkout`, {
