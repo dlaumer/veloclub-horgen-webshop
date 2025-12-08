@@ -168,6 +168,7 @@ export const Shop = () => {
       const cartPayload = cart.items.map((i) => ({
         sku: i.colorId,           // your SKU per color/variant
         size: i.size,
+        color: i.color,
         qty: i.quantity,
         name: i.name,
         unit_amount: chfToRappen(i.price),     // in Rappen (CHF * 100)
