@@ -18,6 +18,7 @@ interface Env {
 type CartItem = {
   sku: string;
   size: string;
+  color: string;
   qty: number;
   title?: string;       // product title for display in Stripe
   unit_amount: number;  // in Rappen (CHF * 100)
@@ -259,7 +260,7 @@ async function handleCheckout(req: Request, env: Env) {
   if (buyer?.email) form.set("customer_email", buyer.email);
 
   // keep metadata small: only sku/size/qty
-  const compactCart = cart.map((i) => ({ sku: i.sku, size: i.size, qty: i.qty }));
+  const compactCart = cart.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: i.qty }));
   form.set("metadata[cart]", JSON.stringify(compactCart));
   if (buyer && Object.keys(buyer).length) {
     form.set("metadata[customer]", JSON.stringify(buyer));
@@ -278,6 +279,8 @@ async function handleCheckout(req: Request, env: Env) {
       form.set(`line_items[${i}][price_data][product_data][metadata][sku]`, item.sku);
     if (item.size)
       form.set(`line_items[${i}][price_data][product_data][metadata][size]`, item.size);
+    if (item.color)
+      form.set(`line_items[${i}][price_data][product_data][metadata][color]`, item.color);
   });
 
   const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
@@ -315,6 +318,7 @@ async function fetchLineItemsFromStripe(sessionId: string, env: Env) {
     return {
       sku: product?.metadata?.sku || "",
       size: product?.metadata?.size || "",
+      color: product?.metadata?.color || "",
       qty: it?.quantity || 0,
       title: product?.name || it?.description || "",
       image: product?.images?.[0] || undefined,
@@ -345,7 +349,7 @@ async function handleWebhook(req: Request, env: Env) {
       (session?.id as string);
 
     // Prefer compact metadata.cart; fallback to Stripe line_items
-    let items: Array<{ sku: string; size: string; qty: number }> = [];
+    let items: Array<{ sku: string; size: string; color: string; qty: number }> = [];
     try {
       const parsed = JSON.parse(session?.metadata?.cart || "[]");
       if (Array.isArray(parsed) && parsed.length) {
@@ -360,7 +364,7 @@ async function handleWebhook(req: Request, env: Env) {
 
     payload = {
       // negative quantities, as your GAS expects
-      items: items.map((i) => ({ sku: i.sku, size: i.size, qty: -Math.abs(i.qty) })),
+      items: items.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: -Math.abs(i.qty) })),
       idempotencyKey: orderId,
     };
     // Call GAS directly, same as /api/stock-delta does
@@ -477,7 +481,7 @@ async function handleConfirm(req: Request, env: Env) {
     );
   }
 
-  let items: Array<{ sku: string; size: string; qty: number }> = [];
+  let items: Array<{ sku: string; size: string; color: string; qty: number }> = [];
   try {
     const parsed = JSON.parse(session?.metadata?.cart || "[]");
     if (Array.isArray(parsed) && parsed.length) items = parsed;
@@ -489,7 +493,7 @@ async function handleConfirm(req: Request, env: Env) {
 
   const orderId = (session?.metadata?.orderId as string) || (session.id as string);
   const payload = {
-    items: items.map((i) => ({ sku: i.sku, size: i.size, qty: -Math.abs(i.qty) })),
+    items: items.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: -Math.abs(i.qty) })),
     idempotencyKey: orderId,
   };
 
