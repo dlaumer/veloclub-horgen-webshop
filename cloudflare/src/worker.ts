@@ -36,6 +36,9 @@ const defaultAllowedOrigins = [
   "https://dlaumer.github.io/veloclub-horgen-webshop/",
   "https://dlaumer.github.io",
   "https://veloclub-horgen.ch",
+  "http://webshop-veloclubhorgen.ch",
+  "https://webshop-veloclubhorgen.ch"
+
 ];
 
 const STOCK_CACHE_TTL = 30; // seconds
@@ -94,7 +97,7 @@ function buildReturnUrls(req: Request, env: Env) {
   // - otherwise -> GitHub Pages URL
   const base = ref.includes("localhost")
     ? "http://localhost:8080/"
-    : "https://dlaumer.github.io/veloclub-horgen-webshop/";
+    : "http://webshop-veloclubhorgen.ch/";
 
   return {
     success: env.SUCCESS_URL || `${base}thank-you?sid={CHECKOUT_SESSION_ID}`,
@@ -266,7 +269,7 @@ async function handleCheckout(req: Request, env: Env) {
     form.set("metadata[customer]", JSON.stringify(buyer));
   }
 
-  cart.forEach((item, i) => { 
+  cart.forEach((item, i) => {
     const title = item.name || `Item ${i + 1}`;
     form.set(`line_items[${i}][quantity]`, String(item.qty));
     form.set(`line_items[${i}][price_data][currency]`, "chf"); // TWINT requires CHF
