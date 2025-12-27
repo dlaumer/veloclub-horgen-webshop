@@ -61,7 +61,7 @@ export const Shop = () => {
     colors: s.colors,
     justStock: s.justStock,
     description: s.description,
-    return: s.return,
+    isReturn: s.isReturn,
   });
 
   useEffect(() => {

@@ -18,7 +18,7 @@ export interface Product {
     }>;
   }>;
   description?: string;
-  return?: string; // 'yes' | 'no' | undefined - indicates if item is eligible for return exchange
+  isReturn?: string; // 'yes' | 'no' | undefined - indicates if item is eligible for return exchange
 }
 
 export interface CartItem {

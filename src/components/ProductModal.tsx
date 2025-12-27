@@ -73,7 +73,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
     : allSizes.filter(s => s.name !== 'ONESIZE');
 
   // Check if product is eligible for return exchange
-  const isReturnEligible = product.return === 'yes';
+  const isReturnEligible = product.isReturn === 'yes';
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor && selectedColorData) {
