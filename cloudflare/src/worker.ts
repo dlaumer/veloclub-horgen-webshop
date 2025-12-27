@@ -37,6 +37,9 @@ const defaultAllowedOrigins = [
   "https://dlaumer.github.io/veloclub-horgen-webshop/",
   "https://dlaumer.github.io",
   "https://veloclub-horgen.ch",
+  "http://webshop-veloclubhorgen.ch",
+  "https://webshop-veloclubhorgen.ch"
+
 ];
 
 const STOCK_CACHE_TTL = 30; // seconds
@@ -95,7 +98,7 @@ function buildReturnUrls(req: Request, env: Env) {
   // - otherwise -> GitHub Pages URL
   const base = ref.includes("localhost")
     ? "http://localhost:8080/"
-    : "https://dlaumer.github.io/veloclub-horgen-webshop/";
+    : "http://webshop-veloclubhorgen.ch/";
 
   return {
     success: env.SUCCESS_URL || `${base}thank-you?sid={CHECKOUT_SESSION_ID}`,
