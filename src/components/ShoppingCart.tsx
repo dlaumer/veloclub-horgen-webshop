@@ -10,8 +10,7 @@ interface ShoppingCartProps {
   onToggle: () => void;
   onRemoveItem: (itemId: string) => void;
   onCheckout: () => void;
-  isPaying?: boolean; // <-- NEW
-
+  isPaying?: boolean;
 }
 
 export const ShoppingCart = ({
@@ -20,12 +19,18 @@ export const ShoppingCart = ({
   onToggle,
   onRemoveItem,
   onCheckout,
-  isPaying = false, // default
-
+  isPaying = false,
 }: ShoppingCartProps) => {
   const { t } = useTranslation();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const total = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  
+  // Calculate return discount: if any item has isReturn=true, one item is free (cheapest)
+  const returnItems = items.filter(item => item.isReturn);
+  const returnDiscount = returnItems.length > 0 
+    ? Math.min(...returnItems.map(item => item.price))
+    : 0;
+  const total = subtotal - returnDiscount;
 
   return (
     <>
@@ -92,6 +97,11 @@ export const ShoppingCart = ({
                         <p className="text-xs text-muted-foreground">
                           {t('amount')}: {item.quantity}
                         </p>
+                        {item.isReturn && (
+                          <p className="text-xs text-green-600 font-medium">
+                            {t('freeItem')}
+                          </p>
+                        )}
                         <p className="font-semibold text-sm mt-1">
                           CHF {item.price.toFixed(2)}
                         </p>
@@ -110,7 +120,13 @@ export const ShoppingCart = ({
 
             {/* Summary */}
             {items.length > 0 && (
-              <div className="border-t border-border p-4 space-y-2">
+            <div className="border-t border-border p-4 space-y-2">
+                {returnDiscount > 0 && (
+                  <div className="flex justify-between text-sm text-green-600">
+                    <span>{t('returnDiscount')}</span>
+                    <span>-CHF {returnDiscount.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between font-semibold">
                   <span>{t('total')}</span>
                   <span>CHF {total.toFixed(2)}</span>

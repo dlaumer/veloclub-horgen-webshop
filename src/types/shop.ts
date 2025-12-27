@@ -18,6 +18,7 @@ export interface Product {
     }>;
   }>;
   description?: string;
+  return?: string; // 'yes' | 'no' | undefined - indicates if item is eligible for return exchange
 }
 
 export interface CartItem {
@@ -30,6 +31,7 @@ export interface CartItem {
   colorId: string;
   quantity: number;
   image: string;
+  isReturn?: boolean; // true if user is returning old item for this product
 }
 
 export interface CartState {

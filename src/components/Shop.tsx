@@ -61,6 +61,7 @@ export const Shop = () => {
     colors: s.colors,
     justStock: s.justStock,
     description: s.description,
+    return: s.return,
   });
 
   useEffect(() => {
@@ -100,7 +101,7 @@ export const Shop = () => {
     setIsModalOpen(true);
   };
 
-  const handleAddToCart = (productId: string, size: string, color: string, colorId: string, quantity: number = 1, image: string) => {
+  const handleAddToCart = (productId: string, size: string, color: string, colorId: string, quantity: number = 1, image: string, isReturn?: boolean) => {
     const product = allProducts.find((p) => p.id === productId);
     if (!product) return;
 
@@ -108,7 +109,8 @@ export const Shop = () => {
       (item) =>
         item.productId === productId &&
         item.size === size &&
-        item.colorId === colorId
+        item.colorId === colorId &&
+        item.isReturn === isReturn
     );
 
     if (existingItemIndex >= 0) {
@@ -117,7 +119,7 @@ export const Shop = () => {
       setCart((prev) => ({ ...prev, items: updatedItems }));
     } else {
       const newItem: CartItem = {
-        id: `${productId}-${size}-${colorId}-${Date.now()}`,
+        id: `${productId}-${size}-${colorId}-${isReturn ? 'return' : 'normal'}-${Date.now()}`,
         productId,
         name: product.name,
         price: product.price,
@@ -126,6 +128,7 @@ export const Shop = () => {
         colorId,          // 👈 IMPORTANT: this is the SKU per color (article number)
         quantity: quantity,
         image: image,
+        isReturn: isReturn,
       };
       setCart((prev) => ({ ...prev, items: [...prev.items, newItem] }));
     }
@@ -158,11 +161,22 @@ export const Shop = () => {
 }
 
 
+  // Calculate return discount: if any item has isReturn=true, one item is free
+  const calculateReturnDiscount = () => {
+    const returnItems = cart.items.filter(item => item.isReturn);
+    if (returnItems.length === 0) return 0;
+    // Find the cheapest return item price to make one free
+    const cheapestReturnPrice = Math.min(...returnItems.map(item => item.price));
+    return cheapestReturnPrice;
+  };
+
   const handleCheckoutFormSubmit = async (data: CheckoutFormData) => {
     if (isPaying) return;
 
     try {
       setIsPaying(true);
+
+      const returnDiscount = calculateReturnDiscount();
 
       // 1) Map your cart to what the Worker expects
       const cartPayload = cart.items.map((i) => ({
@@ -173,6 +187,7 @@ export const Shop = () => {
         name: i.name,
         unit_amount: chfToRappen(i.price),     // in Rappen (CHF * 100)
         image: i.image ?? "",
+        isReturn: i.isReturn ?? false,
       }));
 
       if (cartPayload.length === 0) {
@@ -201,7 +216,12 @@ export const Shop = () => {
       const res = await fetch(`${API_BASE}/api/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ customer, cart: cartPayload, orderId })
+        body: JSON.stringify({ 
+          customer, 
+          cart: cartPayload, 
+          orderId,
+          returnDiscount: chfToRappen(returnDiscount) // in Rappen
+        })
       });
 
       if (!res.ok) {

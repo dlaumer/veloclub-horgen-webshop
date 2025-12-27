@@ -266,5 +266,17 @@ export const translations = {
   maxAvailable: {
     en: "Max in stock",
     de: "Max. auf Lager"
+  },
+  returnOldItem: {
+    en: "Return old item",
+    de: "Altes Produkt zurückgeben"
+  },
+  returnDiscount: {
+    en: "Return discount",
+    de: "Rückgabe-Rabatt"
+  },
+  freeItem: {
+    en: "(Free - Return)",
+    de: "(Gratis - Rückgabe)"
   }
 };

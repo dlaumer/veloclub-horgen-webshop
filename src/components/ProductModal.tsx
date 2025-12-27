@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { X, ChevronLeft, ChevronRight, Plus, Minus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Product } from "@/types/shop";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/useTranslation";
@@ -9,7 +10,7 @@ interface ProductModalProps {
   product: Product | null;
   isOpen: boolean;
   onClose: () => void;
-  onAddToCart: (productId: string, size: string, color: string, colorId: string, quantity: number, image: string) => void;
+  onAddToCart: (productId: string, size: string, color: string, colorId: string, quantity: number, image: string, isReturn?: boolean) => void;
 }
 
 export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductModalProps) => {
@@ -18,6 +19,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const [selectedSize, setSelectedSize] = useState<string>('');
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [quantity, setQuantity] = useState(1);
+  const [isReturn, setIsReturn] = useState(false);
 
   // Initialize selections when product changes - MUST be before conditional returns
   React.useEffect(() => {
@@ -26,6 +28,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
       setSelectedSize('');
       setCurrentImageIndex(0);
       setQuantity(1);
+      setIsReturn(false);
     }
   }, [product]);
 
@@ -69,9 +72,12 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
     ? [oneSizeOption] 
     : allSizes.filter(s => s.name !== 'ONESIZE');
 
+  // Check if product is eligible for return exchange
+  const isReturnEligible = product.return === 'yes';
+
   const handleAddToCart = () => {
     if (selectedSize && selectedColor && selectedColorData) {
-      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity, currentImage);
+      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity, currentImage, isReturn);
       onClose();
     }
   };
@@ -263,6 +269,23 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                 </Button>
               </div>
             </div>
+
+            {/* Return Old Item Checkbox */}
+            {isReturnEligible && (
+              <div className="flex items-center space-x-3 p-3 bg-muted/50 rounded-lg border border-border">
+                <Checkbox
+                  id="return-checkbox"
+                  checked={isReturn}
+                  onCheckedChange={(checked) => setIsReturn(checked === true)}
+                />
+                <label
+                  htmlFor="return-checkbox"
+                  className="text-sm font-medium leading-none cursor-pointer select-none"
+                >
+                  {t('returnOldItem')}
+                </label>
+              </div>
+            )}
 
             {/* Add to Cart Button */}
             <Button
