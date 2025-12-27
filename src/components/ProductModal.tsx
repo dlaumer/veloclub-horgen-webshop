@@ -9,11 +9,12 @@ import { useTranslation } from "@/hooks/useTranslation";
 interface ProductModalProps {
   product: Product | null;
   isOpen: boolean;
+  returnAlreadyUsed: boolean;
   onClose: () => void;
   onAddToCart: (productId: string, size: string, color: string, colorId: string, quantity: number, image: string, isReturn?: boolean) => void;
 }
 
-export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductModalProps) => {
+export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAddToCart }: ProductModalProps) => {
   const { t } = useTranslation();
   const [selectedColor, setSelectedColor] = useState<string>('');
   const [selectedSize, setSelectedSize] = useState<string>('');
@@ -45,11 +46,11 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
         const allSizes = colorData.sizes || [];
         const oneSizeOption = allSizes.find(s => s.name === 'ONESIZE');
         const hasOneSizeAvailable = oneSizeOption && oneSizeOption.stock !== null;
-        
-        const availableSizes = hasOneSizeAvailable 
-          ? [oneSizeOption] 
+
+        const availableSizes = hasOneSizeAvailable
+          ? [oneSizeOption]
           : allSizes.filter(s => s.name !== 'ONESIZE');
-        
+
         if (availableSizes.length === 1) {
           setSelectedSize(availableSizes[0].name);
         }
@@ -62,14 +63,14 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const selectedColorData = product.colors.find(c => c.name === selectedColor);
   const currentImages = selectedColorData?.images || [product.image];
   const currentImage = currentImages[currentImageIndex] || product.image;
-  
+
   // Filter sizes: if ONESIZE exists with non-null stock, only show it; otherwise show all other sizes
   const allSizes = selectedColorData?.sizes || [];
   const oneSizeOption = allSizes.find(s => s.name === 'ONESIZE');
   const hasOneSizeAvailable = oneSizeOption && oneSizeOption.stock !== null;
-  
-  const availableSizes = hasOneSizeAvailable 
-    ? [oneSizeOption] 
+
+  const availableSizes = hasOneSizeAvailable
+    ? [oneSizeOption]
     : allSizes.filter(s => s.name !== 'ONESIZE');
 
   // Check if product is eligible for return exchange
@@ -236,7 +237,7 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
                     )}
                   >
                     <span className="text-xs sm:text-sm font-medium">{size.name}</span>
-                    {(enforceStockLimit && size.stock!=null || (size.stock != null && (size.stock > 0 || size.justStock === 'yes'))) && (
+                    {(enforceStockLimit && size.stock != null || (size.stock != null && (size.stock > 0 || size.justStock === 'yes'))) && (
                       <span className="text-[10px] sm:text-xs">{size.stock} {t('left')}</span>
                     )}
                   </button>
@@ -272,20 +273,45 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
 
             {/* Return Old Item Checkbox */}
             {isReturnEligible && (
-              <div className="flex items-center space-x-3 p-3 bg-muted/50 rounded-lg border border-border">
+              <div
+                className={[
+                  "flex items-center space-x-3 p-3 bg-muted/50 rounded-lg border border-border rounded-lg",
+                  returnAlreadyUsed && !isReturn ? "opacity-50" : "",
+                ].join(" ")}
+              >
                 <Checkbox
                   id="return-checkbox"
                   checked={isReturn}
-                  onCheckedChange={(checked) => setIsReturn(checked === true)}
+                  disabled={returnAlreadyUsed && !isReturn} // ✅ block enabling if already used
+                  onCheckedChange={(checked) => {
+                    // extra guard (in case disabled style isn't respected somewhere)
+                    if (returnAlreadyUsed && !isReturn) return;
+                    setIsReturn(checked === true);
+                  }}
                 />
-                <label
-                  htmlFor="return-checkbox"
-                  className="text-sm font-medium leading-none cursor-pointer select-none"
-                >
-                  {t('returnOldItem')}
-                </label>
+
+                {/* If disabled, don't use htmlFor (otherwise clicking label still toggles) */}
+                {returnAlreadyUsed && !isReturn ? (
+                  <span className="text-sm font-medium leading-none select-none">
+                    {t("returnOldItem")}
+                  </span>
+                ) : (
+                  <label
+                    htmlFor="return-checkbox"
+                    className="text-sm font-medium leading-none cursor-pointer select-none"
+                  >
+                    {t("returnOldItem")}
+                  </label>
+                )}
+
+                {returnAlreadyUsed && !isReturn && (
+                  <div className="text-xs text-muted-foreground">
+                    {t("returnAlreadyUsed")} {/* add this key in your translations */}
+                  </div>
+                )}
               </div>
             )}
+
 
             {/* Add to Cart Button */}
             <Button
