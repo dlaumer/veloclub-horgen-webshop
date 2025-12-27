@@ -14,6 +14,7 @@ export type Product = {
   category: string;
   justStock?: string;
   description?: string;
+  return?: string; // 'yes' | 'no' | undefined
   colors: Array<{
     id: string;
     name: string;

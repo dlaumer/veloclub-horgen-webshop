@@ -23,6 +23,7 @@ type CartItem = {
   title?: string;       // product title for display in Stripe
   unit_amount: number;  // in Rappen (CHF * 100)
   image?: string;
+  isReturn?: boolean;   // true if user is returning old item
 };
 
 declare const caches: CacheStorage;
@@ -241,6 +242,7 @@ async function handleCheckout(req: Request, env: Env) {
   const buyer = (body?.customer || {}) as { email?: string };
   const orderId = body?.orderId as string | undefined;
   const cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
+  const returnDiscount = Number(body?.returnDiscount) || 0; // in Rappen
 
   const origin = req.headers.get("Origin");
   const allowed = allowlist(env);
@@ -262,28 +264,45 @@ async function handleCheckout(req: Request, env: Env) {
   }
   if (buyer?.email) form.set("customer_email", buyer.email);
 
-  // keep metadata small: only sku/size/qty
-  const compactCart = cart.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: i.qty }));
+  // keep metadata small: only sku/size/qty/color/isReturn
+  const compactCart = cart.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: i.qty, isReturn: i.isReturn }));
   form.set("metadata[cart]", JSON.stringify(compactCart));
+  form.set("metadata[returnDiscount]", String(returnDiscount));
   if (buyer && Object.keys(buyer).length) {
     form.set("metadata[customer]", JSON.stringify(buyer));
   }
 
-  cart.forEach((item, i) => {
-    const title = item.name || `Item ${i + 1}`;
-    form.set(`line_items[${i}][quantity]`, String(item.qty));
-    form.set(`line_items[${i}][price_data][currency]`, "chf"); // TWINT requires CHF
-    form.set(`line_items[${i}][price_data][unit_amount]`, String(Math.round(Number(item.unit_amount))));
-    form.set(`line_items[${i}][price_data][product_data][name]`, title);
+  // Find if there's a return item and mark one as free (set price to 0)
+  // We need to handle this by adjusting the price of one return item
+  let discountApplied = false;
+  
+  let lineItemIndex = 0;
+  cart.forEach((item) => { 
+    const title = item.name || `Item ${lineItemIndex + 1}`;
+    let unitAmount = Math.round(Number(item.unit_amount));
+    
+    // If this is a return item and discount hasn't been applied yet, make it free
+    if (item.isReturn && !discountApplied && returnDiscount > 0) {
+      unitAmount = 0;
+      discountApplied = true;
+    }
+    
+    form.set(`line_items[${lineItemIndex}][quantity]`, String(item.qty));
+    form.set(`line_items[${lineItemIndex}][price_data][currency]`, "chf"); // TWINT requires CHF
+    form.set(`line_items[${lineItemIndex}][price_data][unit_amount]`, String(unitAmount));
+    form.set(`line_items[${lineItemIndex}][price_data][product_data][name]`, item.isReturn && unitAmount === 0 ? `${title} (Return - Free)` : title);
     if (item.image) {
-      form.set(`line_items[${i}][price_data][product_data][images][0]`, item.image);
+      form.set(`line_items[${lineItemIndex}][price_data][product_data][images][0]`, item.image);
     }
     if (item.sku)
-      form.set(`line_items[${i}][price_data][product_data][metadata][sku]`, item.sku);
+      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][sku]`, item.sku);
     if (item.size)
-      form.set(`line_items[${i}][price_data][product_data][metadata][size]`, item.size);
+      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][size]`, item.size);
     if (item.color)
-      form.set(`line_items[${i}][price_data][product_data][metadata][color]`, item.color);
+      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][color]`, item.color);
+    if (item.isReturn)
+      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][isReturn]`, "true");
+    lineItemIndex++;
   });
 
   const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
