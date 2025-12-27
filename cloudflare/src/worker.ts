@@ -24,6 +24,7 @@ type CartItem = {
   unit_amount: number;  // in Rappen (CHF * 100)
   image?: string;
   isReturn?: boolean;   // true if user is returning old item
+  returnDiscount?: number; // in Rappen
 };
 
 declare const caches: CacheStorage;
@@ -242,7 +243,6 @@ async function handleCheckout(req: Request, env: Env) {
   const buyer = (body?.customer || {}) as { email?: string };
   const orderId = body?.orderId as string | undefined;
   const cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
-  const returnDiscount = Number(body?.returnDiscount) || 0; // in Rappen
 
   const origin = req.headers.get("Origin");
   const allowed = allowlist(env);
@@ -267,14 +267,12 @@ async function handleCheckout(req: Request, env: Env) {
   if (buyer?.email) form.set("customer_email", buyer.email);
 
   // keep metadata small: only sku/size/qty/color/isReturn
-  const compactCart = cart.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: i.qty, isReturn: i.isReturn }));
+  const compactCart = cart.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: i.qty, isReturn: i.isReturn, returnDiscount: i.returnDiscount }));
   form.set("metadata[cart]", JSON.stringify(compactCart));
-  form.set("metadata[returnDiscount]", String(returnDiscount));
   if (buyer && Object.keys(buyer).length) {
     form.set("metadata[customer]", JSON.stringify(buyer));
   }
 
-  let discountApplied = false;
   let lineItemIndex = 0;
 
   for (const item of cart) {
@@ -302,8 +300,8 @@ async function handleCheckout(req: Request, env: Env) {
     };
 
     // Apply discount to only ONE unit of the first return item
-    if (item.isReturn && !discountApplied && returnDiscount > 0 && item.qty > 0) {
-      const discountedUnit = Math.max(0, unitAmountFull - returnDiscount);
+    if (item.isReturn && item.returnDiscount > 0 && item.qty > 0) {
+      const discountedUnit = Math.max(0, unitAmountFull - item.returnDiscount);
 
       // discounted one
       addLine(
@@ -317,7 +315,6 @@ async function handleCheckout(req: Request, env: Env) {
         addLine(item.qty - 1, unitAmountFull);
       }
 
-      discountApplied = true;
     } else {
       // normal item
       addLine(item.qty, unitAmountFull);
