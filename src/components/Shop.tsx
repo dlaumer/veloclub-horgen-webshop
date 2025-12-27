@@ -96,6 +96,10 @@ export const Shop = () => {
     return filtered;
   }, [activeMainCategory, activeCategory, allProducts, currentFilters]);
 
+  const returnAlreadyUsedForThisProduct = cart.items.some(
+    (it) => it.productId === selectedProduct?.id && it.isReturn === true
+  );
+
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
     setIsModalOpen(true);
@@ -156,27 +160,17 @@ export const Shop = () => {
   };
 
   function chfToRappen(x: number | string) {
-  // robust gegen "205.50" (string) und float-Rundungsfehler
-  return Math.round(Number(x) * 100);
-}
+    // robust gegen "205.50" (string) und float-Rundungsfehler
+    return Math.round(Number(x) * 100);
+  }
 
 
-  // Calculate return discount: if any item has isReturn=true, one item is free
-  const calculateReturnDiscount = () => {
-    const returnItems = cart.items.filter(item => item.isReturn);
-    if (returnItems.length === 0) return 0;
-    // Find the cheapest return item price to make one free
-    const cheapestReturnPrice = Math.min(...returnItems.map(item => item.price));
-    return cheapestReturnPrice;
-  };
 
   const handleCheckoutFormSubmit = async (data: CheckoutFormData) => {
     if (isPaying) return;
 
     try {
       setIsPaying(true);
-
-      const returnDiscount = calculateReturnDiscount();
 
       // 1) Map your cart to what the Worker expects
       const cartPayload = cart.items.map((i) => ({
@@ -188,6 +182,7 @@ export const Shop = () => {
         unit_amount: chfToRappen(i.price),     // in Rappen (CHF * 100)
         image: i.image ?? "",
         isReturn: i.isReturn ?? false,
+        returnDiscount: i.isReturn ? chfToRappen(i.price) : 0
       }));
 
       if (cartPayload.length === 0) {
@@ -206,7 +201,6 @@ export const Shop = () => {
         postalCode: data.postalCode,
         city: data.city,
         country: data.country
-
       };
 
       // 3) Create a stable order id (also used as idempotency key server-side)
@@ -216,11 +210,10 @@ export const Shop = () => {
       const res = await fetch(`${API_BASE}/api/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          customer, 
-          cart: cartPayload, 
+        body: JSON.stringify({
+          customer,
+          cart: cartPayload,
           orderId,
-          returnDiscount: chfToRappen(returnDiscount) // in Rappen
         })
       });
 
@@ -329,6 +322,7 @@ export const Shop = () => {
             setSelectedProduct(null);
           }}
           onAddToCart={handleAddToCart}
+          returnAlreadyUsed={returnAlreadyUsedForThisProduct}
         />
 
         <ShoppingCart

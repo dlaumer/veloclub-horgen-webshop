@@ -24,12 +24,15 @@ export const ShoppingCart = ({
   const { t } = useTranslation();
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
   const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
-  
-  // Calculate return discount: if any item has isReturn=true, one item is free (cheapest)
+
+  // Calculate return discount: each return-eligible item discounts max one unit
   const returnItems = items.filter(item => item.isReturn);
-  const returnDiscount = returnItems.length > 0 
-    ? Math.min(...returnItems.map(item => item.price))
-    : 0;
+
+  const returnDiscount = returnItems.reduce(
+    (sum, item) => sum + item.price,
+    0
+  );
+
   const total = subtotal - returnDiscount;
 
   return (
@@ -120,7 +123,7 @@ export const ShoppingCart = ({
 
             {/* Summary */}
             {items.length > 0 && (
-            <div className="border-t border-border p-4 space-y-2">
+              <div className="border-t border-border p-4 space-y-2">
                 {returnDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600">
                     <span>{t('returnDiscount')}</span>

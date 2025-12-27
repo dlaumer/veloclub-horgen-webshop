@@ -278,5 +278,9 @@ export const translations = {
   freeItem: {
     en: "(Free - Return)",
     de: "(Gratis - Rückgabe)"
+  },
+  returnAlreadyUsed: {
+    en: "Return already used",
+    de: "Rückgabe bereits verwendet"
   }
 };
