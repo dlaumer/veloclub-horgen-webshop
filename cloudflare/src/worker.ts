@@ -257,6 +257,8 @@ async function handleCheckout(req: Request, env: Env) {
   form.append("payment_method_types[]", "twint"); // TWINT-only
   form.set("success_url", success);
   form.set("cancel_url", cancel);
+  form.set("currency", "chf"); // force session currency
+  form.set("locale", "de"); // or "en"
 
   if (orderId) {
     form.set("client_reference_id", String(orderId));
@@ -272,38 +274,56 @@ async function handleCheckout(req: Request, env: Env) {
     form.set("metadata[customer]", JSON.stringify(buyer));
   }
 
-  // Find if there's a return item and mark one as free (set price to 0)
-  // We need to handle this by adjusting the price of one return item
   let discountApplied = false;
-  
   let lineItemIndex = 0;
-  cart.forEach((item) => { 
+
+  for (const item of cart) {
     const title = item.name || `Item ${lineItemIndex + 1}`;
-    let unitAmount = Math.round(Number(item.unit_amount));
-    
-    // If this is a return item and discount hasn't been applied yet, make it free
-    if (item.isReturn && !discountApplied && returnDiscount > 0) {
-      unitAmount = 0;
+    const unitAmountFull = Math.round(Number(item.unit_amount));
+
+    const addLine = (qty, unitAmount, nameSuffix = "") => {
+      form.set(`line_items[${lineItemIndex}][quantity]`, String(qty));
+      form.set(`line_items[${lineItemIndex}][price_data][currency]`, "chf");
+      form.set(`line_items[${lineItemIndex}][price_data][unit_amount]`, String(unitAmount));
+      form.set(
+        `line_items[${lineItemIndex}][price_data][product_data][name]`,
+        nameSuffix ? `${title} ${nameSuffix}` : title
+      );
+
+      if (item.image) {
+        form.set(`line_items[${lineItemIndex}][price_data][product_data][images][0]`, item.image);
+      }
+      if (item.sku) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][sku]`, item.sku);
+      if (item.size) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][size]`, item.size);
+      if (item.color) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][color]`, item.color);
+      if (item.isReturn) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][isReturn]`, "true");
+
+      lineItemIndex++;
+    };
+
+    // Apply discount to only ONE unit of the first return item
+    if (item.isReturn && !discountApplied && returnDiscount > 0 && item.qty > 0) {
+      const discountedUnit = Math.max(0, unitAmountFull - returnDiscount);
+
+      // discounted one
+      addLine(
+        1,
+        discountedUnit,
+        discountedUnit === 0 ? "(Return - Free)" : "(Return - Discounted)"
+      );
+
+      // remaining full price
+      if (item.qty > 1) {
+        addLine(item.qty - 1, unitAmountFull);
+      }
+
       discountApplied = true;
+    } else {
+      // normal item
+      addLine(item.qty, unitAmountFull);
     }
-    
-    form.set(`line_items[${lineItemIndex}][quantity]`, String(item.qty));
-    form.set(`line_items[${lineItemIndex}][price_data][currency]`, "chf"); // TWINT requires CHF
-    form.set(`line_items[${lineItemIndex}][price_data][unit_amount]`, String(unitAmount));
-    form.set(`line_items[${lineItemIndex}][price_data][product_data][name]`, item.isReturn && unitAmount === 0 ? `${title} (Return - Free)` : title);
-    if (item.image) {
-      form.set(`line_items[${lineItemIndex}][price_data][product_data][images][0]`, item.image);
-    }
-    if (item.sku)
-      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][sku]`, item.sku);
-    if (item.size)
-      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][size]`, item.size);
-    if (item.color)
-      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][color]`, item.color);
-    if (item.isReturn)
-      form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][isReturn]`, "true");
-    lineItemIndex++;
-  });
+  }
+
 
   const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",
@@ -438,7 +458,7 @@ async function handleWebhook(req: Request, env: Env) {
       const email = customer?.email;
       const name = (customer?.name + " " + customer?.lastName) || "Customer";
 
-      const currency = session?.currency || "CHF";
+      const currency = "CHF";
       const orderId =
         (session?.metadata?.orderId as string) || (session?.id as string);
       const total = (session?.amount_total || 0) / 100;
