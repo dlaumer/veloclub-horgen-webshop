@@ -38,20 +38,14 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   }, [selectedColor]);
 
   // Auto-select size if there's only one available
+  // Auto-select size if only one is available
   React.useEffect(() => {
     if (product && selectedColor) {
       const colorData = product.colors.find(c => c.name === selectedColor);
       if (colorData) {
-        const allSizes = colorData.sizes || [];
-        const oneSizeOption = allSizes.find(s => s.name === 'ONESIZE');
-        const hasOneSizeAvailable = oneSizeOption && oneSizeOption.stock !== null;
-        
-        const availableSizes = hasOneSizeAvailable 
-          ? [oneSizeOption] 
-          : allSizes.filter(s => s.name !== 'ONESIZE');
-        
-        if (availableSizes.length === 1) {
-          setSelectedSize(availableSizes[0].name);
+        const sizes = colorData.sizes || [];
+        if (sizes.length === 1) {
+          setSelectedSize(sizes[0].name);
         }
       }
     }
@@ -63,15 +57,8 @@ export const ProductModal = ({ product, isOpen, onClose, onAddToCart }: ProductM
   const currentImages = selectedColorData?.images || [product.image];
   const currentImage = currentImages[currentImageIndex] || product.image;
   
-  // Filter sizes: if ONESIZE exists with non-null stock, only show it; otherwise show all other sizes
-  const allSizes = selectedColorData?.sizes || [];
-  const oneSizeOption = allSizes.find(s => s.name === 'ONESIZE');
-  const hasOneSizeAvailable = oneSizeOption && oneSizeOption.stock !== null;
-  
-  const availableSizes = hasOneSizeAvailable 
-    ? [oneSizeOption] 
-    : allSizes.filter(s => s.name !== 'ONESIZE');
-
+  // Show all sizes provided for the selected color
+  const availableSizes = selectedColorData?.sizes || [];
   // Check if product is eligible for return exchange
   const isReturnEligible = product.isReturn === 'yes';
 
