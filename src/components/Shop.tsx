@@ -16,20 +16,7 @@ import { fetchStock, type Product as StockProduct } from "@/lib/stockApi"; // <-
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
-// Filter configuration for each main category
-const CATEGORY_FILTERS: Record<string, FilterOption[]> = {
-  velokleider: [
-    { id: "all", labelKey: "all" },
-    { id: "men", labelKey: "men" },
-    { id: "women", labelKey: "women" },
-    { id: "kids", labelKey: "kids" },
-    { id: "others", labelKey: "others" },
-  ],
-  // Add filters for other categories when needed:
-  // "thomus": [...],
-  // "vch": [...],
-  // "sonderkationen": [...],
-};
+// Derive filters dynamically from products
 
 export const Shop = () => {
   const { t } = useTranslation();
@@ -84,8 +71,36 @@ export const Shop = () => {
     setSearchParams({ rubrik: category });
   };
 
-  // Get filters for current main category
-  const currentFilters = CATEGORY_FILTERS[activeMainCategory] || [];
+  // Derive filters dynamically from products in the current main category
+  const currentFilters = useMemo((): FilterOption[] => {
+    const productsInMainCategory = allProducts.filter(
+      (p) => p.mainCategory === activeMainCategory
+    );
+    
+    // Get unique categories from products
+    const uniqueCategories = new Set<string>();
+    productsInMainCategory.forEach((p) => {
+      if (p.category) {
+        uniqueCategories.add(p.category);
+      }
+    });
+
+    // If no categories found, return empty array (no filter bar shown)
+    if (uniqueCategories.size === 0) {
+      return [];
+    }
+
+    // Build filter options: "all" + unique categories
+    const filters: FilterOption[] = [{ id: "all", labelKey: "all" }];
+    
+    // Sort categories alphabetically for consistent order
+    const sortedCategories = Array.from(uniqueCategories).sort();
+    sortedCategories.forEach((cat) => {
+      filters.push({ id: cat, labelKey: cat });
+    });
+
+    return filters;
+  }, [allProducts, activeMainCategory]);
 
   const filteredProducts = useMemo(() => {
     let filtered = allProducts.filter((p) => p.mainCategory === activeMainCategory);
