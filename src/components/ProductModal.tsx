@@ -55,7 +55,30 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
   if (!isOpen || !product) return null;
 
   const selectedColorData = product.colors.find(c => c.name === selectedColor);
-  const regularImages = selectedColorData?.images || [product.image];
+  
+  // Parse images - handle both array and string formats
+  let regularImages: string[] = [];
+  const rawImages: unknown = selectedColorData?.images;
+  if (Array.isArray(rawImages)) {
+    regularImages = rawImages.filter(Boolean);
+  } else if (typeof rawImages === 'string' && rawImages.trim()) {
+    // Handle string that might be JSON array or comma-separated
+    const trimmed = rawImages.trim();
+    if (trimmed.startsWith('[')) {
+      try {
+        const parsed = JSON.parse(trimmed);
+        regularImages = Array.isArray(parsed) ? parsed.filter(Boolean) : [trimmed];
+      } catch {
+        regularImages = [trimmed];
+      }
+    } else {
+      // Comma-separated URLs
+      regularImages = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    }
+  }
+  if (regularImages.length === 0 && product.image) {
+    regularImages = [product.image];
+  }
   
   // Build gallery items: if image3d exists, add it as the first item
   const image3dValue = (product as any).image3d;
@@ -66,9 +89,7 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
     galleryItems.push({ type: '3d', content: image3dValue });
   }
   regularImages.forEach(img => {
-    if (img) {
-      galleryItems.push({ type: 'image', content: img });
-    }
+    galleryItems.push({ type: 'image', content: img });
   });
   
   // Ensure we always have at least a fallback
