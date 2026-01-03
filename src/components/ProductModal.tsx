@@ -55,8 +55,20 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
   if (!isOpen || !product) return null;
 
   const selectedColorData = product.colors.find(c => c.name === selectedColor);
-  const currentImages = selectedColorData?.images || [product.image];
-  const currentImage = currentImages[currentImageIndex] || product.image;
+  const regularImages = selectedColorData?.images || [product.image];
+  
+  // Build gallery items: if image3d exists, add it as the first item
+  const has3dEmbed = product.image3d && product.image3d.trim() !== '';
+  const galleryItems: Array<{ type: '3d' | 'image'; content: string }> = [];
+  
+  if (has3dEmbed) {
+    galleryItems.push({ type: '3d', content: product.image3d! });
+  }
+  regularImages.forEach(img => {
+    galleryItems.push({ type: 'image', content: img });
+  });
+  
+  const currentGalleryItem = galleryItems[currentImageIndex] || galleryItems[0];
   
   // Show all sizes provided for the selected color
   const availableSizes = selectedColorData?.sizes || [];
@@ -65,7 +77,9 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor && selectedColorData) {
-      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity, currentImage, isReturn);
+      // Use the first regular image for the cart, not the 3D embed
+      const cartImage = regularImages[0] || product.image;
+      onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity, cartImage, isReturn);
       onClose();
     }
   };
@@ -82,13 +96,13 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
 
   const handlePrevImage = () => {
     setCurrentImageIndex(prev =>
-      prev === 0 ? currentImages.length - 1 : prev - 1
+      prev === 0 ? galleryItems.length - 1 : prev - 1
     );
   };
 
   const handleNextImage = () => {
     setCurrentImageIndex(prev =>
-      prev === currentImages.length - 1 ? 0 : prev + 1
+      prev === galleryItems.length - 1 ? 0 : prev + 1
     );
   };
 
@@ -118,10 +132,10 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
         </div>
 
         <div className="flex flex-col sm:flex-row p-4 sm:p-6 gap-4 sm:gap-8">
-          {/* Image Section */}
+          {/* Image/3D Section */}
           <div className="flex-1 min-w-0">
             <div className="relative bg-product-card rounded-lg p-4 sm:p-8 mb-4">
-              {currentImages.length > 1 && (
+              {galleryItems.length > 1 && (
                 <>
                   <button
                     onClick={handlePrevImage}
@@ -138,16 +152,23 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
                 </>
               )}
 
-              <img
-                src={currentImage}
-                alt={`${product.name} - ${selectedColor}`}
-                className="w-full h-48 sm:h-64 object-contain"
-              />
+              {currentGalleryItem.type === '3d' ? (
+                <div 
+                  className="w-full h-48 sm:h-64 [&>div]:w-full [&>div]:h-full [&_iframe]:w-full [&_iframe]:h-full [&_iframe]:rounded-lg [&_p]:hidden"
+                  dangerouslySetInnerHTML={{ __html: currentGalleryItem.content }}
+                />
+              ) : (
+                <img
+                  src={currentGalleryItem.content}
+                  alt={`${product.name} - ${selectedColor}`}
+                  className="w-full h-48 sm:h-64 object-contain"
+                />
+              )}
 
               {/* Navigation dots */}
-              {currentImages.length > 1 && (
+              {galleryItems.length > 1 && (
                 <div className="flex justify-center mt-3 sm:mt-4 gap-2">
-                  {currentImages.map((_, index) => (
+                  {galleryItems.map((_, index) => (
                     <button
                       key={index}
                       onClick={() => setCurrentImageIndex(index)}

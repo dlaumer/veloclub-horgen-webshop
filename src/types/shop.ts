@@ -6,6 +6,7 @@ export interface Product {
   justStock?: string; // 'yes' | 'no' | undefined
   category: string; // men, women, kids
   image: string; // Main image for the card
+  image3d?: string; // HTML embed code for 3D viewer (e.g., Sketchfab iframe)
   colors: Array<{
     id: string;
     name: string;
