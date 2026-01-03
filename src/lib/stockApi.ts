@@ -10,6 +10,7 @@ export type Product = {
   price: number;
   totalStock: number;
   image?: string;
+  image3d?: string; // HTML embed code for 3D viewer (e.g., Sketchfab iframe)
   mainCategory: string;
   category: string;
   justStock?: string;
