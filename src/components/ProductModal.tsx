@@ -58,15 +58,23 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
   const regularImages = selectedColorData?.images || [product.image];
   
   // Build gallery items: if image3d exists, add it as the first item
-  const has3dEmbed = product.image3d && product.image3d.trim() !== '';
+  const image3dValue = (product as any).image3d;
+  const has3dEmbed = image3dValue && typeof image3dValue === 'string' && image3dValue.trim() !== '';
   const galleryItems: Array<{ type: '3d' | 'image'; content: string }> = [];
   
   if (has3dEmbed) {
-    galleryItems.push({ type: '3d', content: product.image3d! });
+    galleryItems.push({ type: '3d', content: image3dValue });
   }
   regularImages.forEach(img => {
-    galleryItems.push({ type: 'image', content: img });
+    if (img) {
+      galleryItems.push({ type: 'image', content: img });
+    }
   });
+  
+  // Ensure we always have at least a fallback
+  if (galleryItems.length === 0) {
+    galleryItems.push({ type: 'image', content: product.image });
+  }
   
   const currentGalleryItem = galleryItems[currentImageIndex] || galleryItems[0];
   
