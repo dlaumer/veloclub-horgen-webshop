@@ -329,7 +329,6 @@ async function handleCheckout(req: Request, env: Env) {
     params.set(`basket[${idx}][name]`, l.name);
     params.set(`basket[${idx}][amount]`, String(l.amount));
     params.set(`basket[${idx}][quantity]`, String(l.quantity));
-    params.set(`basket[${idx}][vatRate]`, "0");
   });
 
   // HMAC signature over the URL-encoded query string (without ApiSignature)
