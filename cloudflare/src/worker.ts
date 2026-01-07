@@ -5,8 +5,13 @@ interface Env {
   GAS_TOKEN: string;
   CORS_ORIGINS?: string;
 
+  // Legacy Stripe (still used by webhook/confirm routes)
   STRIPE_SECRET_KEY: string;       // secret
   STRIPE_WEBHOOK_SECRET: string;   // secret
+
+  // zahls.ch (Payrexx) – used by /api/checkout
+  PAYREXX_INSTANCE: string;        // instance name
+  PAYREXX_API_SECRET: string;      // secret
 
   PURCHASE_URL: string;
   PURCHASE_TOKEN?: string;
@@ -20,10 +25,11 @@ type CartItem = {
   size: string;
   color: string;
   qty: number;
-  title?: string;       // product title for display in Stripe
+  name?: string;        // product title (sent by frontend)
+  title?: string;       // legacy
   unit_amount: number;  // in Rappen (CHF * 100)
   image?: string;
-  isReturn?: boolean;   // true if user is returning old item
+  isReturn?: boolean;      // true if user is returning old item
   returnDiscount?: number; // in Rappen
 };
 
@@ -237,11 +243,20 @@ async function handleStockDelta(req: Request, env: Env) {
   });
 }
 
-// POST /api/checkout  (create Stripe Checkout Session, TWINT-only)
+// POST /api/checkout  (create Payrexx Gateway for TWINT)
 async function handleCheckout(req: Request, env: Env) {
   const body = await req.json().catch(() => ({} as any));
-  const buyer = (body?.customer || {}) as { email?: string };
-  const orderId = body?.orderId as string | undefined;
+  const customer = (body?.customer || {}) as {
+    name?: string;
+    lastName?: string;
+    email?: string;
+    street?: string;
+    postalCode?: string;
+    city?: string;
+    country?: string;
+  };
+
+  const orderId = (body?.orderId as string | undefined) || `${Date.now()}`;
   const cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
 
   const origin = req.headers.get("Origin");
@@ -249,95 +264,108 @@ async function handleCheckout(req: Request, env: Env) {
   const cors = corsHeaders(origin, allowed);
 
   if (!cart.length) return asJSON({ error: "Empty cart" }, 400, cors);
+  if (!env.PAYREXX_INSTANCE || !env.PAYREXX_API_SECRET) {
+    return asJSON({ error: "Missing PAYREXX_INSTANCE / PAYREXX_API_SECRET" }, 500, cors);
+  }
 
   const { success, cancel } = buildReturnUrls(req, env);
+  // Payrexx doesn't support Stripe placeholders like {CHECKOUT_SESSION_ID}
+  const successUrl = String(success).replace("{CHECKOUT_SESSION_ID}", "");
+  const cancelUrl = String(cancel).replace("{CHECKOUT_SESSION_ID}", "");
 
-  const form = new URLSearchParams();
-  form.set("mode", "payment");
-  form.append("payment_method_types[]", "twint"); // TWINT-only
-  form.set("success_url", success);
-  form.set("cancel_url", cancel);
-  form.set("currency", "chf"); // force session currency
-  form.set("locale", "de"); // or "en"
+  const basketLines: Array<{ name: string; amount: number; quantity: number }> = [];
 
-  if (orderId) {
-    form.set("client_reference_id", String(orderId));
-    form.set("metadata[orderId]", String(orderId));
-  }
-  if (buyer?.email) form.set("customer_email", buyer.email);
+  const pushBasket = (name: string, amount: number, quantity: number) => {
+    basketLines.push({ name, amount: Math.round(Number(amount)), quantity: Math.round(Number(quantity)) });
+  };
 
-  // keep metadata small: only sku/size/qty/color/isReturn
-  const compactCart = cart.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: i.qty, isReturn: i.isReturn, returnDiscount: i.returnDiscount }));
-  form.set("metadata[cart]", JSON.stringify(compactCart));
-  if (buyer && Object.keys(buyer).length) {
-    form.set("metadata[customer]", JSON.stringify(buyer));
-  }
-
-  let lineItemIndex = 0;
-
+  // Mirror the old return/discount logic (split into 2 lines if needed)
   for (const item of cart) {
-    const title = item.name || `Item ${lineItemIndex + 1}`;
+    const baseName = (item.name || item.title || "Item").trim();
     const unitAmountFull = Math.round(Number(item.unit_amount));
+    const qty = Math.round(Number(item.qty || 0));
 
-    const addLine = (qty, unitAmount, nameSuffix = "") => {
-      form.set(`line_items[${lineItemIndex}][quantity]`, String(qty));
-      form.set(`line_items[${lineItemIndex}][price_data][currency]`, "chf");
-      form.set(`line_items[${lineItemIndex}][price_data][unit_amount]`, String(unitAmount));
-      form.set(
-        `line_items[${lineItemIndex}][price_data][product_data][name]`,
-        nameSuffix ? `${title} ${nameSuffix}` : title
-      );
+    if (qty <= 0) continue;
 
-      if (item.image) {
-        form.set(`line_items[${lineItemIndex}][price_data][product_data][images][0]`, item.image);
-      }
-      if (item.sku) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][sku]`, item.sku);
-      if (item.size) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][size]`, item.size);
-      if (item.color) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][color]`, item.color);
-      if (item.isReturn) form.set(`line_items[${lineItemIndex}][price_data][product_data][metadata][isReturn]`, "true");
-
-      lineItemIndex++;
-    };
-
-    // Apply discount to only ONE unit of the first return item
-    if (item.isReturn && item.returnDiscount > 0 && item.qty > 0) {
-      const discountedUnit = Math.max(0, unitAmountFull - item.returnDiscount);
+    if (item.isReturn && (item.returnDiscount || 0) > 0) {
+      const discountedUnit = Math.max(0, unitAmountFull - Math.round(Number(item.returnDiscount || 0)));
 
       // discounted one
-      addLine(
-        1,
+      pushBasket(
+        discountedUnit === 0 ? `${baseName} (Return - Free)` : `${baseName} (Return - Discounted)`,
         discountedUnit,
-        discountedUnit === 0 ? "(Return - Free)" : "(Return - Discounted)"
+        1,
       );
 
       // remaining full price
-      if (item.qty > 1) {
-        addLine(item.qty - 1, unitAmountFull);
+      if (qty > 1) {
+        pushBasket(baseName, unitAmountFull, qty - 1);
       }
-
     } else {
-      // normal item
-      addLine(item.qty, unitAmountFull);
+      pushBasket(baseName, unitAmountFull, qty);
     }
   }
 
-
-  const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form,
-  });
-
-  if (!stripeRes.ok) {
-    const err = await stripeRes.text();
-    return asJSON({ error: `Stripe error: ${err}` }, 500, cors);
+  const amountTotal = basketLines.reduce((sum, l) => sum + l.amount * l.quantity, 0);
+  if (amountTotal <= 0) {
+    return asJSON({ error: "Invalid amount" }, 422, cors);
   }
 
-  const session = await stripeRes.json();
-  return asJSON({ url: session.url }, 200, cors);
+  const params = new URLSearchParams();
+  params.set("amount", String(amountTotal));
+  params.set("currency", "CHF");
+  params.set("referenceId", orderId);
+  params.set("pm[0]", "twint");
+  params.set("language", "DE");
+  params.set("successRedirectUrl", successUrl);
+  params.set("failedRedirectUrl", cancelUrl);
+  params.set("cancelRedirectUrl", cancelUrl);
+
+  if (customer?.name) params.set("fields[forename][value]", customer.name);
+  if (customer?.lastName) params.set("fields[surname][value]", customer.lastName);
+  if (customer?.email) params.set("fields[email][value]", customer.email);
+
+  basketLines.forEach((l, idx) => {
+    params.set(`basket[${idx}][name]`, l.name);
+    params.set(`basket[${idx}][amount]`, String(l.amount));
+    params.set(`basket[${idx}][quantity]`, String(l.quantity));
+    params.set(`basket[${idx}][vatRate]`, "0");
+  });
+
+  // HMAC signature over the URL-encoded query string (without ApiSignature)
+  const unsigned = params.toString();
+  const key = await crypto.subtle.importKey(
+    "raw",
+    enc.encode(env.PAYREXX_API_SECRET),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(unsigned));
+  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
+  params.set("ApiSignature", sigB64);
+
+  const gatewayUrl = `https://api.payrexx.com/v1.0/Gateway/?instance=${encodeURIComponent(env.PAYREXX_INSTANCE)}`;
+  const payrexxRes = await fetch(gatewayUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: params,
+  });
+
+  const txt = await payrexxRes.text().catch(() => "");
+  let json: any = null;
+  try { json = JSON.parse(txt); } catch { }
+
+  if (!payrexxRes.ok || json?.status !== "success") {
+    return asJSON({ error: `zahls/payrexx error: ${txt || payrexxRes.status}` }, 500, cors);
+  }
+
+  const url = json?.data?.[0]?.link;
+  if (!url) {
+    return asJSON({ error: `zahls/payrexx missing payment link: ${txt}` }, 500, cors);
+  }
+
+  return asJSON({ url }, 200, cors);
 }
 
 // Utility: get line items from Stripe if metadata.cart is missing/too long
