@@ -496,6 +496,236 @@ async function fetchLineItemsFromStripe(sessionId: string, env: Env) {
     };
   });
 }
+
+// ---------- Order finalization helpers (used by webhook and free orders) ----------
+type ZahlsProduct = {
+  sku?: string | null;
+  name?: string | null;
+  price?: number | string | null; // in Rappen
+  quantity?: number | string | null;
+  description?: string | null;
+};
+
+function getOrderIdFromTx(tx: any) {
+  return String(
+    tx?.referenceId ||
+      tx?.invoice?.referenceId ||
+      tx?.invoice?.paymentLink?.referenceId ||
+      tx?.invoice?.number ||
+      tx?.id
+  );
+}
+
+function extractCartFromTx(tx: any, orderId: string): any[] {
+  const cfs = Array.isArray(tx?.invoice?.custom_fields) ? tx.invoice.custom_fields : [];
+  const cartField = cfs.find((x: any) => String(x?.name).toLowerCase() === "cart");
+
+  if (!cartField?.value) return [];
+
+  try {
+    const parsed = JSON.parse(String(cartField.value));
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    console.error("cart JSON parse failed", { orderId, valuePreview: String(cartField.value).slice(0, 200) });
+    return [];
+  }
+}
+
+function indexProducts(products: ZahlsProduct[]) {
+  const bySku = new Map<string, ZahlsProduct[]>();
+  const byName = new Map<string, ZahlsProduct[]>();
+
+  for (const p of products) {
+    const sku = String(p?.sku || "");
+    const name = String(p?.name || "");
+    if (sku) (bySku.get(sku) ?? bySku.set(sku, []).get(sku)!)?.push(p);
+    if (name) (byName.get(name) ?? byName.set(name, []).get(name)!)?.push(p);
+  }
+
+  return { bySku, byName };
+}
+
+function buildItemsForEmail(cart: any[], products: ZahlsProduct[]) {
+  const { bySku, byName } = indexProducts(products);
+
+  return cart.map((c: any) => {
+    const sku = String(c?.sku || "");
+    const qty = Number(c?.qty ?? 0) || 0;
+
+    // try match by sku first
+    let p: ZahlsProduct | null = (sku && bySku.get(sku)?.[0]) || null;
+    // fallback by name if sku missing
+    if (!p && c?.name) p = byName.get(String(c.name))?.[0] || null;
+
+    const title = String((p as any)?.name || c?.name || sku || "Artikel");
+
+    // Zahls price is already cents
+    const unit_amount =
+      (p as any)?.price != null && Number.isFinite(Number((p as any).price)) ? Number((p as any).price) : undefined;
+
+    return {
+      sku,
+      title,
+      size: c?.size ? String(c.size) : "",
+      color: c?.color ? String(c.color) : "",
+      qty,
+      unit_amount,
+      image: c?.image || "",
+      isReturn: !!c?.isReturn,
+      returnDiscount: Number(c?.returnDiscount || 0) || 0,
+    };
+  });
+}
+
+async function commitStock(env: Env, orderId: string, cart: any[]) {
+  const stockPayload = {
+    items: cart.map((i: any) => ({
+      sku: String(i.sku || ""),
+      size: String(i.size || ""),
+      color: String(i.color || ""),
+      qty: -Math.abs(Number(i.qty || 0)),
+    })),
+    idempotencyKey: orderId,
+  };
+
+  const stockTarget = gasTarget(env, "stockDelta");
+  const upstream = await fetch(stockTarget, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stockPayload),
+  });
+
+  if (!upstream.ok) {
+    const txt = await upstream.text().catch(() => "");
+    console.error("stockDelta failed", { orderId, status: upstream.status, body: txt });
+    throw new Error(`stock commit failed: ${upstream.status} ${txt}`);
+  }
+}
+
+async function persistOrder(env: Env, record: any) {
+  try {
+    const orderKey = `order:${record.orderId}`;
+    await env.ORDERS.put(orderKey, JSON.stringify(record), {
+      expirationTtl: 60 * 60 * 24 * 30,
+    });
+  } catch (e) {
+    console.error("Failed to persist order in KV", { orderId: record?.orderId, e });
+  }
+}
+
+async function sendOrderEmailViaGAS(env: Env, order: any) {
+  const emailTarget = gasTarget(env, "sendOrderEmail");
+  const emailResp = await fetch(emailTarget, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "sendOrderEmail", order }),
+  });
+
+  if (!emailResp.ok) {
+    const txt = await emailResp.text().catch(() => "");
+    console.error("sendOrderEmail failed", { orderId: order?.orderId, status: emailResp.status, body: txt });
+  }
+}
+
+function buildOrderRecordFromTx(tx: any, orderId: string) {
+  return {
+    orderId,
+    status: String(tx?.status || ""),
+    mode: String(tx?.mode || ""),
+    amount: Number(tx?.amount || 0),
+    currency: String(tx?.invoice?.currency || "CHF"),
+    txId: Number(tx?.id || 0),
+    uuid: String(tx?.uuid || ""),
+    time: String(tx?.time || ""),
+    email: String(tx?.contact?.email || ""),
+  };
+}
+
+async function finalizeOrderFromZahlsTx(env: Env, tx: any) {
+  const orderId = getOrderIdFromTx(tx);
+
+  const cart = extractCartFromTx(tx, orderId);
+  if (!Array.isArray(cart) || cart.length === 0) {
+    console.error("missing cart", { orderId, customFields: (tx?.invoice?.custom_fields || []).map((x: any) => x?.name) });
+    throw new Error("missing cart");
+  }
+
+  const products = Array.isArray(tx?.invoice?.products) ? (tx.invoice.products as ZahlsProduct[]) : [];
+  const itemsForEmail = buildItemsForEmail(cart, products);
+
+  // Stock commit (must succeed)
+  await commitStock(env, orderId, cart);
+
+  // Persist (best-effort)
+  await persistOrder(env, buildOrderRecordFromTx(tx, orderId));
+
+  // Email (best-effort)
+  try {
+    const email = String(tx?.contact?.email || "");
+    const name = `${tx?.contact?.firstname || ""} ${tx?.contact?.lastname || ""}`.trim() || "Customer";
+    const total = Number(tx?.amount || 0) / 100;
+
+    await sendOrderEmailViaGAS(env, {
+      orderId,
+      name,
+      email,
+      currency: "CHF",
+      total,
+      items: itemsForEmail,
+    });
+  } catch (err) {
+    console.error("sendOrderEmail threw", { orderId, err });
+  }
+
+  return { orderId };
+}
+
+// POST /api/free-order  (no payment; reuse same stock+email pipeline)
+async function handleFreeOrder(req: Request, env: Env) {
+  const origin = req.headers.get("Origin");
+  const allowed = allowlist(env);
+  const cors = corsHeaders(origin, allowed);
+
+  const body = await req.json().catch(() => ({} as any));
+  const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
+  const cart = Array.isArray(body?.cart) ? body.cart : [];
+  const customer = body?.customer || {};
+
+  if (!Array.isArray(cart) || cart.length === 0) {
+    return asJSON({ ok: false, error: "Empty cart" }, 400, cors);
+  }
+
+  // Build a tx-shaped object so we can reuse the webhook pipeline.
+  const tx = {
+    status: "confirmed",
+    mode: "FREE",
+    amount: Number(body?.amount ?? 0) || 0,
+    referenceId: orderId,
+    contact: {
+      email: customer?.email || "",
+      firstname: customer?.name || "",
+      lastname: customer?.lastName || "",
+    },
+    invoice: {
+      currency: "CHF",
+      products: (cart || []).map((c: any) => ({
+        sku: c?.sku || "",
+        name: c?.name || c?.title || c?.sku || "Artikel",
+        price: Number(c?.unit_amount || 0),
+      })),
+      custom_fields: [{ name: "cart", type: "text", value: JSON.stringify(cart) }],
+    },
+  };
+
+  try {
+    await finalizeOrderFromZahlsTx(env, tx);
+    return asJSON({ ok: true, orderId }, 200, cors);
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    return asJSON({ ok: false, error: msg }, 500, cors);
+  }
+}
+
 async function handleWebhook(req: Request, env: Env) {
   // --- simple auth ---
   const url = new URL(req.url);
@@ -519,153 +749,17 @@ async function handleWebhook(req: Request, env: Env) {
   // Only act on confirmed payments
   if (String(tx.status) !== "confirmed") return new Response("ignored", { status: 200 });
 
-  const orderId = String(
-    tx.referenceId ||
-    tx.invoice?.referenceId ||
-    tx.invoice?.paymentLink?.referenceId ||
-    tx.invoice?.number ||
-    tx.id
-  );
-
-  // ---- extract cart from invoice.custom_fields (our JSON string) ----
-  const cfs = Array.isArray(tx?.invoice?.custom_fields) ? tx.invoice.custom_fields : [];
-  const cartField = cfs.find((x: any) => String(x?.name).toLowerCase() === "cart");
-
-  let cart: any[] = [];
-  if (cartField?.value) {
-    try {
-      cart = JSON.parse(String(cartField.value));
-    } catch (e) {
-      console.error("cart JSON parse failed", { orderId, valuePreview: String(cartField.value).slice(0, 200) });
-      return new Response("bad cart json", { status: 200 });
-    }
-  }
-
-  if (!Array.isArray(cart) || cart.length === 0) {
-    console.error("missing cart", { orderId, customFields: cfs.map((x: any) => x?.name) });
-    return new Response("missing cart", { status: 200 });
-  }
-
-  // ---- products from Zahls invoice (authoritative for name + price) ----
-  const products = Array.isArray(tx?.invoice?.products) ? tx.invoice.products : [];
-
-  // Build quick lookup by sku, fallback by name
-  const bySku = new Map<string, any[]>();
-  const byName = new Map<string, any[]>();
-
-  for (const p of products) {
-    const sku = String(p?.sku || "");
-    const name = String(p?.name || "");
-    if (sku) (bySku.get(sku) ?? bySku.set(sku, []).get(sku)!)?.push(p);
-    if (name) (byName.get(name) ?? byName.set(name, []).get(name)!)?.push(p);
-  }
-
-  // Build items in the shape Apps Script expects
-  const itemsForEmail = cart.map((c: any) => {
-    const sku = String(c?.sku || "");
-    const qty = Number(c?.qty ?? 0) || 0;
-
-    // try match by sku first
-    let p = (sku && bySku.get(sku)?.[0]) || null;
-    // fallback by name if sku missing
-    if (!p && c?.name) p = byName.get(String(c.name))?.[0] || null;
-
-    const title = String(p?.name || c?.name || sku || "Artikel");
-
-    // Zahls product "price" in your payloads is already cents (e.g. 200 => CHF 2.00)
-    const unit_amount =
-      p?.price != null && Number.isFinite(Number(p.price)) ? Number(p.price) : undefined;
-
-    return {
-      sku,
-      title,
-      size: c?.size ? String(c.size) : "",
-      color: c?.color ? String(c.color) : "",
-      qty,
-      unit_amount,           // cents
-      image: c?.image || "", // optional if you ever include it in cart
-      isReturn: !!c?.isReturn,
-      returnDiscount: Number(c?.returnDiscount || 0) || 0,
-    };
-  });
-
-  // ---- commit stock via GAS (use cart, as before) ----
-  const stockPayload = {
-    items: cart.map((i: any) => ({
-      sku: String(i.sku || ""),
-      size: String(i.size || ""),
-      color: String(i.color || ""),
-      qty: -Math.abs(Number(i.qty || 0)),
-    })),
-    idempotencyKey: orderId,
-  };
-
-  const stockTarget = gasTarget(env, "stockDelta");
-  const upstream = await fetch(stockTarget, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(stockPayload),
-  });
-
-  if (!upstream.ok) {
-    const txt = await upstream.text().catch(() => "");
-    console.error("stockDelta failed", { orderId, status: upstream.status, body: txt });
-    return new Response(`stock commit failed: ${upstream.status} ${txt}`, { status: 500 });
-  }
-
-  // ---- persist order status for frontend polling ----
   try {
-    const orderKey = `order:${orderId}`;
-
-    const orderRecord = {
-      orderId,
-      status: String(tx.status),          // confirmed
-      mode: String(tx.mode || ""),        // LIVE
-      amount: Number(tx.amount || 0),     // cents
-      currency: String(tx.invoice?.currency || "CHF"),
-      txId: Number(tx.id || 0),
-      uuid: String(tx.uuid || ""),
-      time: String(tx.time || ""),
-      email: String(tx.contact?.email || ""),
-    };
-
-    await env.ORDERS.put(orderKey, JSON.stringify(orderRecord), {
-      // keep for 30 days
-      expirationTtl: 60 * 60 * 24 * 30,
-    });
-  } catch (e) {
-    console.error("Failed to persist order in KV", { orderId, e });
-    // DO NOT fail webhook for this
-  }
-
-
-  // ---- send email (do not fail webhook if this fails) ----
-  try {
-    const email = String(tx?.contact?.email || "");
-    const name = `${tx?.contact?.firstname || ""} ${tx?.contact?.lastname || ""}`.trim() || "Customer";
-    const total = Number(tx?.amount || 0) / 100;
-
-    const emailBody = {
-      action: "sendOrderEmail",
-      order: { orderId, name, email, currency: "CHF", total, items: itemsForEmail },
-    };
-
-    const emailTarget = gasTarget(env, "sendOrderEmail");
-    const emailResp = await fetch(emailTarget, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(emailBody),
-    });
-
-    if (!emailResp.ok) {
-      const txt = await emailResp.text().catch(() => "");
-      console.error("sendOrderEmail failed", { orderId, status: emailResp.status, body: txt });
+    await finalizeOrderFromZahlsTx(env, tx);
+    return new Response("ok", { status: 200 });
+  } catch (e: any) {
+    const msg = String(e?.message || e);
+    if (msg.includes("stock commit failed")) {
+      return new Response(msg, { status: 500 });
     }
-  } catch (err) {
-    console.error("sendOrderEmail threw", { orderId, err });
+    // For malformed payloads, don't retry-spam
+    return new Response(msg, { status: 200 });
   }
-
-  return new Response("ok", { status: 200 });
 }
 
 
@@ -734,6 +828,7 @@ export default {
 
     // Stripe routes
     if (req.method === "POST" && path === "/api/checkout") return handleCheckout(req, env);
+    if (req.method === "POST" && path === "/api/free-order") return handleFreeOrder(req, env);
     if (req.method === "POST" && path === "/api/webhook") return handleWebhook(req, env);
     if (req.method === "GET" && path === "/api/confirm") return handleConfirm(req, env);
     if (req.method === "GET" && path === "/api/order-status ") { return handleOrderStatus(req, env); }
