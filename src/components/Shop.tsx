@@ -221,9 +221,31 @@ export const Shop = () => {
 
       // 3) Create a stable order id (also used as idempotency key server-side)
       const orderId = `${Date.now()}`;
-      console.log(cartPayload)
-      // 4) Call your Worker
-      const res = await fetch(`${API_BASE}/api/checkout`, {
+      console.log(cartPayload);
+
+      // 4) Calculate total (same logic as worker: first return item is free)
+      let totalCents = 0;
+      let foundFirstReturn = false;
+      for (const item of cartPayload) {
+        const qty = Math.max(0, Number(item.qty || 0));
+        const unitFull = Math.round(Number(item.unit_amount || 0));
+        if (!qty) continue;
+
+        if (item.isReturn && item.returnDiscount > 0 && !foundFirstReturn) {
+          // First return item: first unit is free
+          foundFirstReturn = true;
+          const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
+          totalCents += discounted;
+          if (qty > 1) totalCents += (qty - 1) * unitFull;
+        } else {
+          totalCents += qty * unitFull;
+        }
+      }
+
+      // 5) Choose endpoint based on total
+      const endpoint = totalCents === 0 ? `${API_BASE}/api/free-order` : `${API_BASE}/api/checkout`;
+      
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
