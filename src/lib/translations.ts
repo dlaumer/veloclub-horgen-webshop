@@ -282,5 +282,18 @@ export const translations = {
   returnAlreadyUsed: {
     en: "Return already used",
     de: "Rückgabe bereits verwendet"
+  },
+  thankYouReceived: {
+    en: "We have received your order.",
+    de: "Wir haben Ihre Bestellung erhalten."
+  },
+  thankYouEmailSoon: {
+    en: "You should receive a confirmation email with all details shortly.",
+    de: "In Kürze sollten Sie eine Bestätigungs-E-Mail mit allen Details erhalten."
+  },
+  thankYouContact: {
+    en: "If you do not receive an email or have any questions, please contact us.",
+    de: "Falls Sie keine E-Mail erhalten oder Fragen haben, melden Sie sich bitte bei uns."
   }
+
 };

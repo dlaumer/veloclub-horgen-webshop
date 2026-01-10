@@ -11,7 +11,7 @@ export const Header = ({ activeMainCategory, onMainCategoryChange }: HeaderProps
   const { t } = useTranslation();
 
   const mainCategories = [
-    // { id: "velokleider", labelKey: "velokleider" as const },
+    { id: "velokleider", labelKey: "velokleider" as const },
     { id: "thomus", labelKey: "thomus" as const },
     // { id: "vch", labelKey: "vch" as const },
     // { id: "sonderkationen", labelKey: "sonderkationen" as const },

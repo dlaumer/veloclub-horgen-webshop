@@ -111,10 +111,32 @@ export async function confirmPurchase(
   return res.json(); // will return { ok:true, data:[...] } from Apps Script
 }
 
-export async function fetchCheckoutSession(sid: string): Promise<any> {
-  const url = `${API_BASE}/api/checkout-session?sid=${sid}`;
-  const res = await fetch(url, { cache: 'no-store' });
-  if (!res.ok) throw new Error(`Stock fetch failed: ${res.status}`);
-  const json: StockResponse = await res.json();
-  return json
+export async function fetchCheckoutSession(orderId: string): Promise<any> {
+  const url = `${API_BASE}/api/order-status?orderId=${encodeURIComponent(orderId)}`;
+  console.log(url)
+  const res = await fetch(url, { cache: "no-store" });
+  if (!res.ok) throw new Error(`Order fetch failed: ${res.status}`);
+  const json = await res.json();
+
+  // Normalize to "session-like" object
+  if (!json.ok) {
+    throw new Error("Order lookup failed");
+  }
+
+  if (!json.found) {
+    // Stripe equivalent: session still open / pending
+    return {
+      status: "open",
+      payment_status: "unpaid",
+    };
+  }
+
+  return {
+    status: "complete",
+    payment_status: json.status === "confirmed" ? "paid" : "unpaid",
+    amount_total: json.amount, // cents
+    currency: json.currency || "CHF",
+    customer_email: json.email || null,
+    orderId: json.orderId,
+  };
 }
