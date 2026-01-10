@@ -717,6 +717,117 @@ async function handleOrderStatus(req: Request, env: Env) {
 }
 
 
+// ---------- Free Order Handler (total = 0) ----------
+async function handleFreeOrder(req: Request, env: Env) {
+  const origin = req.headers.get("Origin");
+  const allowed = allowlist(env);
+  const cors = corsHeaders(origin, allowed);
+
+  const body = await req.json().catch(() => ({} as any));
+  const buyer = (body?.customer || {}) as {
+    email?: string;
+    name?: string;
+    lastName?: string;
+    street?: string;
+    postalCode?: string;
+    city?: string;
+    country?: string;
+  };
+
+  const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
+  const cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
+
+  if (!cart.length) return asJSON({ error: "Empty cart" }, 400, cors);
+
+  // ---- commit stock via GAS ----
+  const stockPayload = {
+    items: cart.map((i: any) => ({
+      sku: String(i.sku || ""),
+      size: String(i.size || ""),
+      color: String(i.color || ""),
+      qty: -Math.abs(Number(i.qty || 0)),
+    })),
+    idempotencyKey: orderId,
+  };
+
+  const stockTarget = gasTarget(env, "stockDelta");
+  const upstream = await fetch(stockTarget, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stockPayload),
+  });
+
+  if (!upstream.ok) {
+    const txt = await upstream.text().catch(() => "");
+    console.error("stockDelta failed for free order", { orderId, status: upstream.status, body: txt });
+    return asJSON({ error: `stock commit failed: ${upstream.status}` }, 500, cors);
+  }
+
+  // ---- persist order status for frontend polling ----
+  try {
+    const orderKey = `order:${orderId}`;
+    const orderRecord = {
+      orderId,
+      status: "confirmed",
+      mode: "FREE",
+      amount: 0,
+      currency: "CHF",
+      txId: 0,
+      uuid: "",
+      time: new Date().toISOString(),
+      email: String(buyer?.email || ""),
+    };
+
+    await env.ORDERS.put(orderKey, JSON.stringify(orderRecord), {
+      expirationTtl: 60 * 60 * 24 * 30,
+    });
+  } catch (e) {
+    console.error("Failed to persist free order in KV", { orderId, e });
+  }
+
+  // ---- Build items for email ----
+  const itemsForEmail = cart.map((c: any) => ({
+    sku: String(c?.sku || ""),
+    title: String(c?.name || c?.sku || "Artikel"),
+    size: c?.size ? String(c.size) : "",
+    color: c?.color ? String(c.color) : "",
+    qty: Number(c?.qty ?? 0) || 0,
+    unit_amount: 0,
+    image: c?.image || "",
+    isReturn: !!c?.isReturn,
+    returnDiscount: Number(c?.returnDiscount || 0) || 0,
+  }));
+
+  // ---- send email ----
+  try {
+    const email = String(buyer?.email || "");
+    const name = `${buyer?.name || ""} ${buyer?.lastName || ""}`.trim() || "Customer";
+
+    const emailBody = {
+      action: "sendOrderEmail",
+      order: { orderId, name, email, currency: "CHF", total: 0, items: itemsForEmail },
+    };
+
+    const emailTarget = gasTarget(env, "sendOrderEmail");
+    const emailResp = await fetch(emailTarget, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(emailBody),
+    });
+
+    if (!emailResp.ok) {
+      const txt = await emailResp.text().catch(() => "");
+      console.error("sendOrderEmail failed for free order", { orderId, status: emailResp.status, body: txt });
+    }
+  } catch (err) {
+    console.error("sendOrderEmail threw for free order", { orderId, err });
+  }
+
+  // ---- Return success URL (frontend will redirect) ----
+  const { success } = buildReturnUrls(req, env, orderId);
+  return asJSON({ url: success }, 200, cors);
+}
+
 // ---------- CORS preflight ----------
 function handleOptions(req: Request, env: Env) {
   const origin = req.headers.get("Origin");
@@ -732,8 +843,9 @@ export default {
 
     if (req.method === "OPTIONS") return handleOptions(req, env);
 
-    // Stripe routes
+    // Payment routes
     if (req.method === "POST" && path === "/api/checkout") return handleCheckout(req, env);
+    if (req.method === "POST" && path === "/api/free-order") return handleFreeOrder(req, env);
     if (req.method === "POST" && path === "/api/webhook") return handleWebhook(req, env);
     if (req.method === "GET" && path === "/api/confirm") return handleConfirm(req, env);
     if (req.method === "GET" && path === "/api/order-status ") { return handleOrderStatus(req, env); }
