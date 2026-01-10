@@ -10,8 +10,8 @@ interface Env {
   STRIPE_WEBHOOK_SECRET: string;   // secret
 
   // zahls.ch (Payrexx) – used by /api/checkout
-  PAYREXX_INSTANCE: string;        // instance name
-  PAYREXX_API_SECRET: string;      // secret
+  ZAHLS_INSTANCE: string;        // instance name
+  ZAHLS_API_SECRET: string;      // secret
 
   PURCHASE_URL: string;
   PURCHASE_TOKEN?: string;
@@ -96,22 +96,6 @@ function urlPath(req: Request) {
   }
 }
 
-// Prefer the site (Referer) as return base; fallback to API origin; allow ENV override
-function buildReturnUrls(req: Request, env: Env) {
-  const ref = req.headers.get("referer") || req.url;
-
-  // Decide base URL:
-  // - if coming from localhost -> http://localhost:8080/
-  // - otherwise -> GitHub Pages URL
-  const base = ref.includes("localhost")
-    ? "http://localhost:8080/"
-    : "http://webshop-veloclubhorgen.ch/";
-
-  return {
-    success: env.SUCCESS_URL || `${base}thank-you?sid={CHECKOUT_SESSION_ID}`,
-    cancel: env.CANCEL_URL || `${base}cancelled`,
-  };
-}
 
 
 async function verifyStripeSignature(sigHeader: string, raw: string, secret: string) {
@@ -242,21 +226,65 @@ async function handleStockDelta(req: Request, env: Env) {
     headers: { "Content-Type": "application/json", ...cors },
   });
 }
+// --- helpers: query encoding like the plugin ---
+function buildQueryRFC3986(entries: Array<[string, string]>): string {
+  // like PHP http_build_query(..., PHP_QUERY_RFC3986): spaces become %20
+  return entries.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`).join("&");
+}
 
-// POST /api/checkout  (create Payrexx Gateway for TWINT)
+function buildQueryRFC1738(entries: Array<[string, string]>): string {
+  // like PHP default http_build_query: spaces become +
+  return entries
+    .map(([k, v]) => {
+      const kk = encodeURIComponent(k).replace(/%20/g, "+");
+      const vv = encodeURIComponent(v).replace(/%20/g, "+");
+      return `${kk}=${vv}`;
+    })
+    .join("&");
+}
+
+async function hmacSha256Base64(secret: string, msg: string): Promise<string> {
+  const enc = new TextEncoder();
+  const key = await crypto.subtle.importKey("raw", enc.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(msg));
+  const bytes = new Uint8Array(sigBuf);
+  let bin = "";
+  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+  return btoa(bin);
+}
+
+function safeOriginFromReq(req: Request, env: Env): string {
+  const base =
+    env.RETURN_BASE_URL ||
+    req.headers.get("origin") ||
+    (req.headers.get("referer") ? new URL(req.headers.get("referer")!).origin : "") ||
+    "https://webshop-veloclubhorgen.ch";
+  return base.endsWith("/") ? base.slice(0, -1) : base;
+}
+
+// Full return url builder (no Stripe placeholders)
+function buildReturnUrls(req: Request, env: Env, orderId?: string) {
+  const base = safeOriginFromReq(req, env);
+  const success = env.SUCCESS_URL || `${base}/thank-you${orderId ? `?orderId=${encodeURIComponent(orderId)}` : ""}`;
+  const cancel = env.CANCEL_URL || `${base}/cancelled${orderId ? `?orderId=${encodeURIComponent(orderId)}` : ""}`;
+  return { success, cancel };
+}
+
+// --- main ---
 async function handleCheckout(req: Request, env: Env) {
   const body = await req.json().catch(() => ({} as any));
-  const customer = (body?.customer || {}) as {
+  const buyer = (body?.customer || {}) as {
+    email?: string;
     name?: string;
     lastName?: string;
-    email?: string;
+    phone?: string;
     street?: string;
-    postalCode?: string;
-    city?: string;
-    country?: string;
+    zip?: string;
+    place?: string;
+    countryISO?: string; // "CH"
   };
 
-  const orderId = (body?.orderId as string | undefined) || `${Date.now()}`;
+  const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
   const cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
 
   const origin = req.headers.get("Origin");
@@ -264,108 +292,178 @@ async function handleCheckout(req: Request, env: Env) {
   const cors = corsHeaders(origin, allowed);
 
   if (!cart.length) return asJSON({ error: "Empty cart" }, 400, cors);
-  if (!env.PAYREXX_INSTANCE || !env.PAYREXX_API_SECRET) {
-    return asJSON({ error: "Missing PAYREXX_INSTANCE / PAYREXX_API_SECRET" }, 500, cors);
-  }
 
-  const { success, cancel } = buildReturnUrls(req, env);
-  // Payrexx doesn't support Stripe placeholders like {CHECKOUT_SESSION_ID}
-  const successUrl = String(success).replace("{CHECKOUT_SESSION_ID}", "");
-  const cancelUrl = String(cancel).replace("{CHECKOUT_SESSION_ID}", "");
+  const instance = env.ZAHLS_INSTANCE;
+  const apiSecret = env.ZAHLS_API_SECRET || env.ZAHLS_API_KEY;
 
-  const basketLines: Array<{ name: string; amount: number; quantity: number }> = [];
+  if (!instance) return asJSON({ error: "Missing ZAHLS_INSTANCE" }, 500, cors);
+  if (!apiSecret) return asJSON({ error: "Missing ZAHLS_API_SECRET" }, 500, cors);
 
-  const pushBasket = (name: string, amount: number, quantity: number) => {
-    basketLines.push({ name, amount: Math.round(Number(amount)), quantity: Math.round(Number(quantity)) });
-  };
+  const { success, cancel } = buildReturnUrls(req, env, orderId);
 
-  // Mirror the old return/discount logic (split into 2 lines if needed)
+  // --- compute total cents (same intent as your Stripe code) ---
+  let totalCents = 0;
+
   for (const item of cart) {
-    const baseName = (item.name || item.title || "Item").trim();
-    const unitAmountFull = Math.round(Number(item.unit_amount));
-    const qty = Math.round(Number(item.qty || 0));
+    const qty = Math.max(0, Number(item.qty || 0));
+    const unitFull = Math.round(Number(item.unit_amount || 0)); // cents
+    if (!qty) continue;
 
-    if (qty <= 0) continue;
-
-    if (item.isReturn && (item.returnDiscount || 0) > 0) {
-      const discountedUnit = Math.max(0, unitAmountFull - Math.round(Number(item.returnDiscount || 0)));
-
-      // discounted one
-      pushBasket(
-        discountedUnit === 0 ? `${baseName} (Return - Free)` : `${baseName} (Return - Discounted)`,
-        discountedUnit,
-        1,
-      );
-
-      // remaining full price
-      if (qty > 1) {
-        pushBasket(baseName, unitAmountFull, qty - 1);
-      }
+    if (item.isReturn && item.returnDiscount > 0 && qty > 0) {
+      const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
+      totalCents += discounted;
+      if (qty > 1) totalCents += (qty - 1) * unitFull;
     } else {
-      pushBasket(baseName, unitAmountFull, qty);
+      totalCents += qty * unitFull;
     }
   }
 
-  const amountTotal = basketLines.reduce((sum, l) => sum + l.amount * l.quantity, 0);
-  if (amountTotal <= 0) {
-    return asJSON({ error: "Invalid amount" }, 422, cors);
+  if (!Number.isFinite(totalCents) || totalCents <= 0) {
+    return asJSON({ error: "Invalid total" }, 400, cors);
   }
 
-  const params = new URLSearchParams();
-  params.set("amount", String(amountTotal));
-  params.set("currency", "CHF");
-  params.set("referenceId", orderId);
-  params.set("pm[0]", "twint");
-  params.set("language", "DE");
-  params.set("successRedirectUrl", successUrl);
-  params.set("failedRedirectUrl", cancelUrl);
-  params.set("cancelRedirectUrl", cancelUrl);
+  // Compact cart for webhook stock update
+  const compactCart = cart.map((i) => ({
+    sku: i.sku || "",
+    size: i.size || "",
+    color: i.color || "",
+    qty: Number(i.qty || 0),
+    isReturn: !!i.isReturn,
+    returnDiscount: Number(i.returnDiscount || 0),
+  }));
 
-  if (customer?.name) params.set("fields[forename][value]", customer.name);
-  if (customer?.lastName) params.set("fields[surname][value]", customer.lastName);
-  if (customer?.email) params.set("fields[email][value]", customer.email);
+  // Build basket lines with the same split logic so Zahls invoice matches your total
+  const basketLines: Array<{ name: string; quantity: number; amount: number; sku?: string }> = [];
 
-  basketLines.forEach((l, idx) => {
-    params.set(`basket[${idx}][name]`, l.name);
-    params.set(`basket[${idx}][amount]`, String(l.amount));
-    params.set(`basket[${idx}][quantity]`, String(l.quantity));
+  const pushBasket = (name: string, quantity: number, amountCents: number, sku?: string) => {
+    basketLines.push({
+      name,
+      quantity,
+      amount: Math.round(amountCents),
+      sku: sku || undefined,
+    });
+  };
+
+  for (const item of cart) {
+    const qty = Math.max(0, Number(item.qty || 0));
+    if (!qty) continue;
+
+    const title = item.name || item.sku || "Item";
+    const unitFull = Math.round(Number(item.unit_amount || 0));
+
+    if (item.isReturn && item.returnDiscount > 0 && qty > 0) {
+      const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
+      pushBasket(
+        discounted === 0 ? `${title} (Return - Free)` : `${title} (Return - Discounted)`,
+        1,
+        discounted,
+        item.sku
+      );
+      if (qty > 1) pushBasket(title, qty - 1, unitFull, item.sku);
+    } else {
+      pushBasket(title, qty, unitFull, item.sku);
+    }
+  }
+
+  // Optional: force TWINT only. If your account ever rejects this, set false.
+  const FORCE_TWINT_ONLY = true;
+
+  // ---- build unsigned params (NO instance, NO ApiSignature) ----
+  const signEntries: Array<[string, string]> = [];
+
+  signEntries.push(["model", "Gateway"]);
+
+  // Values used by the Woo plugin (safe defaults)
+  signEntries.push(["validity", "15"]);
+  signEntries.push(["skipResultPage", "1"]);
+  signEntries.push(["preAuthorization", "0"]);
+  signEntries.push(["chargeOnAuthorization", "0"]);
+
+  if (FORCE_TWINT_ONLY) signEntries.push(["pm[0]", "twint"]);
+
+  signEntries.push(["amount", String(totalCents)]);
+  signEntries.push(["currency", "CHF"]);
+
+  signEntries.push(["purpose", `Order ${orderId}`]);
+  signEntries.push(["referenceId", orderId]);
+
+  signEntries.push(["successRedirectUrl", success]);
+  signEntries.push(["cancelRedirectUrl", cancel]);
+  signEntries.push(["failedRedirectUrl", cancel]);
+
+  // Fields (optional)
+  if (buyer?.name) signEntries.push(["fields[forename][value]", String(buyer.name)]);
+  if (buyer?.lastName) signEntries.push(["fields[surname][value]", String(buyer.lastName)]);
+  if (buyer?.email) signEntries.push(["fields[email][value]", String(buyer.email)]);
+  if (buyer?.phone) signEntries.push(["fields[phone][value]", String(buyer.phone)]);
+  if (buyer?.street) signEntries.push(["fields[street][value]", String(buyer.street)]);
+  if (buyer?.zip) signEntries.push(["fields[postcode][value]", String(buyer.zip)]);
+  if (buyer?.place) signEntries.push(["fields[place][value]", String(buyer.place)]);
+  if (buyer?.countryISO) signEntries.push(["fields[country][value]", String(buyer.countryISO)]);
+
+  // Custom field for webhook cart
+  signEntries.push(["fields[custom_field_1][name]", "cart"]);
+  signEntries.push(["fields[custom_field_1][value]", JSON.stringify(compactCart)]);
+
+  // Basket lines
+  basketLines.forEach((p, i) => {
+    signEntries.push([`basket[${i}][name]`, p.name]);
+    signEntries.push([`basket[${i}][quantity]`, String(p.quantity)]);
+    signEntries.push([`basket[${i}][amount]`, String(p.amount)]);
+    if (p.sku) signEntries.push([`basket[${i}][sku]`, p.sku]);
   });
 
-  // HMAC signature over the URL-encoded query string (without ApiSignature)
-  const unsigned = params.toString();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    enc.encode(env.PAYREXX_API_SECRET),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const sigBuf = await crypto.subtle.sign("HMAC", key, enc.encode(unsigned));
-  const sigB64 = btoa(String.fromCharCode(...new Uint8Array(sigBuf)));
-  params.set("ApiSignature", sigB64);
+  // Sign string: RFC1738 (+ for spaces)
+  const signString = buildQueryRFC1738(signEntries);
+  const ApiSignature = await hmacSha256Base64(apiSecret, signString);
 
-  const gatewayUrl = `https://api.payrexx.com/v1.0/Gateway/?instance=${encodeURIComponent(env.PAYREXX_INSTANCE)}`;
-  const payrexxRes = await fetch(gatewayUrl, {
+  // Send body: RFC3986 (%20 for spaces) AND include instance + ApiSignature
+  const sendEntries: Array<[string, string]> = [
+    ...signEntries,
+    ["ApiSignature", ApiSignature],
+    ["instance", instance],
+  ];
+
+  const bodyStr = buildQueryRFC3986(sendEntries);
+
+  // URL includes ?instance=... as well (plugin behavior)
+  const apiUrl = `https://api.zahls.ch/v1/Gateway/0/?instance=${encodeURIComponent(instance)}`;
+
+  console.log("Zahls checkout", { apiUrl, orderId, totalCents });
+  // console.log("Sign string:", signString); // enable only while debugging (can be long)
+  // console.log("Body:", bodyStr);
+
+  const res = await fetch(apiUrl, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: params,
+    headers: {
+      "Content-Type": "application/x-www-form-urlencoded",
+      "Accept": "application/json",
+    },
+    body: bodyStr,
   });
 
-  const txt = await payrexxRes.text().catch(() => "");
-  let json: any = null;
-  try { json = JSON.parse(txt); } catch { }
-
-  if (!payrexxRes.ok || json?.status !== "success") {
-    return asJSON({ error: `zahls/payrexx error: ${txt || payrexxRes.status}` }, 500, cors);
+  const txt = await res.text().catch(() => "");
+  console.log("Zahls status:", res.status);
+  if (!res.ok) {
+    console.log("Zahls response:", txt);
+    return asJSON({ error: `zahls error: ${txt}`, status: res.status }, 500, cors);
   }
 
-  const url = json?.data?.[0]?.link;
-  if (!url) {
-    return asJSON({ error: `zahls/payrexx missing payment link: ${txt}` }, 500, cors);
+  let json: any = {};
+  try { json = JSON.parse(txt); } catch { json = {}; }
+
+  const data = Array.isArray(json?.data) ? json.data[0] : json?.data;
+  const link = data?.link;
+  const gatewayId = data?.id;
+
+  if (!link) {
+    return asJSON({ error: "Zahls: missing link in response", raw: json }, 500, cors);
   }
 
-  return asJSON({ url }, 200, cors);
+  return asJSON({ url: link, gatewayId, orderId }, 200, cors);
 }
+
+
 
 // Utility: get line items from Stripe if metadata.cart is missing/too long
 async function fetchLineItemsFromStripe(sessionId: string, env: Env) {
@@ -395,135 +493,153 @@ async function fetchLineItemsFromStripe(sessionId: string, env: Env) {
     };
   });
 }
-
-
-// POST /api/webhook (Stripe → us): verify signature, update stock via PURCHASE_URL
 async function handleWebhook(req: Request, env: Env) {
-  const raw = await req.text(); // RAW body required
-  const sig = req.headers.get("stripe-signature") || "";
-  const valid = await verifyStripeSignature(sig, raw, env.STRIPE_WEBHOOK_SECRET);
-  let payload = null;
-  if (!valid) return new Response("bad signature", { status: 400 });
+  // --- simple auth ---
+  const url = new URL(req.url);
+  const token = url.searchParams.get("token") || "";
+  if (!env.WEBHOOK_TOKEN || token !== env.WEBHOOK_TOKEN) {
+    return new Response("forbidden", { status: 403 });
+  }
 
-  const event = JSON.parse(raw);
+  // --- Zahls JSON webhook ---
+  const raw = await req.text();
+  let body: any = {};
+  try {
+    body = JSON.parse(raw || "{}");
+  } catch {
+    return new Response("bad json", { status: 200 });
+  }
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
+  const tx = body?.transaction;
+  if (!tx) return new Response("missing transaction", { status: 200 });
 
-    const orderId =
-      (session?.metadata?.orderId as string) ||
-      (session?.id as string);
+  // Only act on confirmed payments
+  if (String(tx.status) !== "confirmed") return new Response("ignored", { status: 200 });
 
-    // Prefer compact metadata.cart; fallback to Stripe line_items
-    let items: Array<{ sku: string; size: string; color: string; qty: number }> = [];
+  const orderId = String(
+    tx.referenceId ||
+      tx.invoice?.referenceId ||
+      tx.invoice?.paymentLink?.referenceId ||
+      tx.invoice?.number ||
+      tx.id
+  );
+
+  // ---- extract cart from invoice.custom_fields (our JSON string) ----
+  const cfs = Array.isArray(tx?.invoice?.custom_fields) ? tx.invoice.custom_fields : [];
+  const cartField = cfs.find((x: any) => String(x?.name).toLowerCase() === "cart");
+
+  let cart: any[] = [];
+  if (cartField?.value) {
     try {
-      const parsed = JSON.parse(session?.metadata?.cart || "[]");
-      if (Array.isArray(parsed) && parsed.length) {
-        items = parsed;
-      }
-    } catch {
-      // ignore
-    }
-    if (!items.length) {
-      items = await fetchLineItemsFromStripe(session.id, env);
-    }
-
-    payload = {
-      // negative quantities, as your GAS expects
-      items: items.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: -Math.abs(i.qty) })),
-      idempotencyKey: orderId,
-    };
-    // Call GAS directly, same as /api/stock-delta does
-    const target = gasTarget(env, "stockDelta");
-    const upstream = await fetch(target, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-
-    if (!upstream.ok) {
-      const txt = await upstream.text().catch(() => "");
-      console.error("Webhook: stockDelta call failed", {
-        target,
-        status: upstream.status,
-        body: txt,
-      });
-      // Return 5xx so Stripe retries until stock update succeeds
-      return new Response(`stock commit failed: ${upstream.status} ${txt}`, { status: 500 });
-    }
-
-    /**
- * --- SEND ORDER CONFIRMATION VIA GOOGLE APPS SCRIPT ---
- * We try to build a solid "order" object for the confirmation email.
- * Prefer data from your payment session (Stripe/TWINT), falling back to what's in `payload`.
- * - Do NOT fail the webhook if the email fails. Just log and continue.
- */
-    try {
-      // If your code already has a session object from Stripe:
-      // const email = session?.customer_details?.email || session?.customer_email;
-      // const name  = session?.customer_details?.name  || payload?.customer?.name || "Customer";
-      // inside the try { ... } where you build the email
-      const customer = session?.metadata?.customer
-        ? JSON.parse(session.metadata.customer)
-        : null;
-
-      let items: any[] = [];
-      try {
-        // rich data from Stripe
-        items = await fetchLineItemsFromStripe(session.id, env);
-      } catch (e) {
-        // fallback to compact metadata.cart if Stripe call fails
-        const cart = session?.metadata?.cart
-          ? JSON.parse(session.metadata.cart)
-          : [];
-        items = cart;
-      }
-
-      const email = customer?.email;
-      const name = (customer?.name + " " + customer?.lastName) || "Customer";
-
-      const currency = "CHF";
-      const orderId =
-        (session?.metadata?.orderId as string) || (session?.id as string);
-      const total = (session?.amount_total || 0) / 100;
-
-      const emailBody = {
-        action: "sendOrderEmail",
-        order: {
-          orderId,
-          name,
-          email,
-          currency,
-          total,
-          items, // now includes title/image/unit_amount
-        },
-      };
-
-      // Call your Apps Script email endpoint
-      const emailTarget = gasTarget(env, "sendOrderEmail"); // same base as stockDelta but different "route" helper
-      const emailResp = await fetch(emailTarget, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(emailBody),
-      });
-
-      if (!emailResp.ok) {
-        const txt = await emailResp.text().catch(() => "");
-        console.error("Webhook: sendOrderEmail failed", {
-          emailTarget,
-          status: emailResp.status,
-          body: txt,
-        });
-        // DO NOT throw — we don't want to fail the webhook because of email
-      }
-    } catch (err) {
-      console.error("Webhook: sendOrderEmail threw", err);
-      // swallow error to avoid breaking the webhook
+      cart = JSON.parse(String(cartField.value));
+    } catch (e) {
+      console.error("cart JSON parse failed", { orderId, valuePreview: String(cartField.value).slice(0, 200) });
+      return new Response("bad cart json", { status: 200 });
     }
   }
 
-  return new Response(`${JSON.stringify(payload)})`, { status: 200 });
+  if (!Array.isArray(cart) || cart.length === 0) {
+    console.error("missing cart", { orderId, customFields: cfs.map((x: any) => x?.name) });
+    return new Response("missing cart", { status: 200 });
+  }
+
+  // ---- products from Zahls invoice (authoritative for name + price) ----
+  const products = Array.isArray(tx?.invoice?.products) ? tx.invoice.products : [];
+
+  // Build quick lookup by sku, fallback by name
+  const bySku = new Map<string, any[]>();
+  const byName = new Map<string, any[]>();
+
+  for (const p of products) {
+    const sku = String(p?.sku || "");
+    const name = String(p?.name || "");
+    if (sku) (bySku.get(sku) ?? bySku.set(sku, []).get(sku)!)?.push(p);
+    if (name) (byName.get(name) ?? byName.set(name, []).get(name)!)?.push(p);
+  }
+
+  // Build items in the shape Apps Script expects
+  const itemsForEmail = cart.map((c: any) => {
+    const sku = String(c?.sku || "");
+    const qty = Number(c?.qty ?? 0) || 0;
+
+    // try match by sku first
+    let p = (sku && bySku.get(sku)?.[0]) || null;
+    // fallback by name if sku missing
+    if (!p && c?.name) p = byName.get(String(c.name))?.[0] || null;
+
+    const title = String(p?.name || c?.name || sku || "Artikel");
+
+    // Zahls product "price" in your payloads is already cents (e.g. 200 => CHF 2.00)
+    const unit_amount =
+      p?.price != null && Number.isFinite(Number(p.price)) ? Number(p.price) : undefined;
+
+    return {
+      sku,
+      title,
+      size: c?.size ? String(c.size) : "",
+      color: c?.color ? String(c.color) : "",
+      qty,
+      unit_amount,           // cents
+      image: c?.image || "", // optional if you ever include it in cart
+      isReturn: !!c?.isReturn,
+      returnDiscount: Number(c?.returnDiscount || 0) || 0,
+    };
+  });
+
+  // ---- commit stock via GAS (use cart, as before) ----
+  const stockPayload = {
+    items: cart.map((i: any) => ({
+      sku: String(i.sku || ""),
+      size: String(i.size || ""),
+      color: String(i.color || ""),
+      qty: -Math.abs(Number(i.qty || 0)),
+    })),
+    idempotencyKey: orderId,
+  };
+
+  const stockTarget = gasTarget(env, "stockDelta");
+  const upstream = await fetch(stockTarget, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(stockPayload),
+  });
+
+  if (!upstream.ok) {
+    const txt = await upstream.text().catch(() => "");
+    console.error("stockDelta failed", { orderId, status: upstream.status, body: txt });
+    return new Response(`stock commit failed: ${upstream.status} ${txt}`, { status: 500 });
+  }
+
+  // ---- send email (do not fail webhook if this fails) ----
+  try {
+    const email = String(tx?.contact?.email || "");
+    const name = `${tx?.contact?.firstname || ""} ${tx?.contact?.lastname || ""}`.trim() || "Customer";
+    const total = Number(tx?.amount || 0) / 100;
+
+    const emailBody = {
+      action: "sendOrderEmail",
+      order: { orderId, name, email, currency: "CHF", total, items: itemsForEmail },
+    };
+
+    const emailTarget = gasTarget(env, "sendOrderEmail");
+    const emailResp = await fetch(emailTarget, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(emailBody),
+    });
+
+    if (!emailResp.ok) {
+      const txt = await emailResp.text().catch(() => "");
+      console.error("sendOrderEmail failed", { orderId, status: emailResp.status, body: txt });
+    }
+  } catch (err) {
+    console.error("sendOrderEmail threw", { orderId, err });
+  }
+
+  return new Response("ok", { status: 200 });
 }
+
+
 
 // Optional: GET /api/confirm?sid=cs_...  (for thank-you UX)
 async function handleConfirm(req: Request, env: Env) {
