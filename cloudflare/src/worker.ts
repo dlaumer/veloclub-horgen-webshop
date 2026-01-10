@@ -326,18 +326,35 @@ async function handleCheckout(req: Request, env: Env) {
   }
 
   // Compact cart for webhook stock update
-  const compactCart = cart.map((i) => ({
-    sku: i.sku || "",
-    size: i.size || "",
-    color: i.color || "",
-    qty: Number(i.qty || 0),
-    // carry through for email + sheet (Zahls invoice does not include images)
-    name: i.name || i.title || "",
-    unit_amount: Math.round(Number(i.unit_amount || 0)),
-    image: i.image || "",
-    isReturn: !!i.isReturn,
-    returnDiscount: Number(i.returnDiscount || 0),
-  }));
+  const compactCart = cart.map((i) => {
+    const qty = Math.max(0, Number(i.qty || 0));
+    const unitFull = Math.round(Number(i.unit_amount || 0));
+    const returnDiscount = Math.round(Number(i.returnDiscount || 0));
+
+    const discounted =
+      i.isReturn && returnDiscount > 0 && qty > 0
+        ? Math.max(0, unitFull - returnDiscount)
+        : unitFull;
+
+    const baseName = i.name || i.title || i.sku || "";
+    const name =
+      i.isReturn && returnDiscount > 0 && discounted === 0
+        ? `${baseName} (Return - Free)`
+        : baseName;
+
+    return {
+      sku: i.sku || "",
+      size: i.size || "",
+      color: i.color || "",
+      qty,
+      name,
+      unit_amount: unitFull,
+      image: i.image || "",
+      isReturn: !!i.isReturn,
+      returnDiscount,
+    };
+  });
+
 
   // Build basket lines with the same split logic so Zahls invoice matches your total
   const basketLines: Array<{ name: string; quantity: number; amount: number; sku?: string }> = [];
