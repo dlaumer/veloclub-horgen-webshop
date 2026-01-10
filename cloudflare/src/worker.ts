@@ -1,6 +1,9 @@
 // worker.ts — Cloudflare Worker (TypeScript) without any `name` identifiers that would trigger _name2
 
 interface Env {
+  ORDERS: KVNamespace;
+  WEBHOOK_TOKEN: string;
+
   GAS_URL: string;
   GAS_TOKEN: string;
   CORS_ORIGINS?: string;
@@ -518,10 +521,10 @@ async function handleWebhook(req: Request, env: Env) {
 
   const orderId = String(
     tx.referenceId ||
-      tx.invoice?.referenceId ||
-      tx.invoice?.paymentLink?.referenceId ||
-      tx.invoice?.number ||
-      tx.id
+    tx.invoice?.referenceId ||
+    tx.invoice?.paymentLink?.referenceId ||
+    tx.invoice?.number ||
+    tx.id
   );
 
   // ---- extract cart from invoice.custom_fields (our JSON string) ----
@@ -610,6 +613,32 @@ async function handleWebhook(req: Request, env: Env) {
     return new Response(`stock commit failed: ${upstream.status} ${txt}`, { status: 500 });
   }
 
+  // ---- persist order status for frontend polling ----
+  try {
+    const orderKey = `order:${orderId}`;
+
+    const orderRecord = {
+      orderId,
+      status: String(tx.status),          // confirmed
+      mode: String(tx.mode || ""),        // LIVE
+      amount: Number(tx.amount || 0),     // cents
+      currency: String(tx.invoice?.currency || "CHF"),
+      txId: Number(tx.id || 0),
+      uuid: String(tx.uuid || ""),
+      time: String(tx.time || ""),
+      email: String(tx.contact?.email || ""),
+    };
+
+    await env.ORDERS.put(orderKey, JSON.stringify(orderRecord), {
+      // keep for 30 days
+      expirationTtl: 60 * 60 * 24 * 30,
+    });
+  } catch (e) {
+    console.error("Failed to persist order in KV", { orderId, e });
+    // DO NOT fail webhook for this
+  }
+
+
   // ---- send email (do not fail webhook if this fails) ----
   try {
     const email = String(tx?.contact?.email || "");
@@ -640,101 +669,51 @@ async function handleWebhook(req: Request, env: Env) {
 }
 
 
-
-// Optional: GET /api/confirm?sid=cs_...  (for thank-you UX)
-async function handleConfirm(req: Request, env: Env) {
-  const url = new URL(req.url);
-  const sid = url.searchParams.get("sid");
-  if (!sid) return new Response("missing sid", { status: 400 });
-
-  const sRes = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sid}`, {
-    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
-  });
-  if (!sRes.ok) {
-    const t = await sRes.text().catch(() => "");
-    return new Response(`stripe session fetch failed: ${sRes.status} ${t}`, { status: 502 });
-  }
-  const session = await sRes.json();
-  const paid = session.payment_status === "paid" || session.status === "complete";
-  if (!paid) {
-    return new Response(
-      `not paid (status=${session.status}, payment_status=${session.payment_status})`,
-      { status: 409 },
-    );
-  }
-
-  let items: Array<{ sku: string; size: string; color: string; qty: number }> = [];
-  try {
-    const parsed = JSON.parse(session?.metadata?.cart || "[]");
-    if (Array.isArray(parsed) && parsed.length) items = parsed;
-  } catch { }
-  if (!items.length) {
-    items = await fetchLineItemsFromStripe(session.id, env);
-  }
-  if (!items.length) return new Response("no items found", { status: 422 });
-
-  const orderId = (session?.metadata?.orderId as string) || (session.id as string);
-  const payload = {
-    items: items.map((i) => ({ sku: i.sku, size: i.size, color: i.color, qty: -Math.abs(i.qty) })),
-    idempotencyKey: orderId,
-  };
-
-  const upstream = await fetch(env.PURCHASE_URL, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(env.PURCHASE_TOKEN ? { Authorization: `Bearer ${env.PURCHASE_TOKEN}` } : {}),
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!upstream.ok) {
-    const txt = await upstream.text().catch(() => "");
-    return new Response(`stock update failed: ${upstream.status} ${txt}`, { status: 502 });
-  }
-
-  return asJSON({ ok: true, orderId, itemsUpdated: items.length });
-}
-
-// GET /api/checkout-session?sid=cs_test_...
-async function handleCheckoutSession(req: Request, env: Env) {
+// GET /api/order-status?orderId=1768062933299
+async function handleOrderStatus(req: Request, env: Env) {
   const origin = req.headers.get("Origin");
   const allowed = allowlist(env);
   const cors = corsHeaders(origin, allowed);
 
   const url = new URL(req.url);
-  const sid = (url.searchParams.get("sid") || "").trim();
+  const orderId = (url.searchParams.get("orderId") || "").trim();
 
-  if (!sid) {
-    return asJSON({ ok: false, error: "Missing sid" }, 400, cors);
+  if (!orderId) {
+    return asJSON({ ok: false, error: "Missing orderId" }, 400, cors);
   }
 
-  const stripeRes = await fetch(
-    `https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sid)}`,
-    {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${env.STRIPE_SECRET_KEY}`,
-      },
-    }
-  );
+  const key = `order:${orderId}`;
+  const raw = await env.ORDERS.get(key);
 
-  if (!stripeRes.ok) {
-    const txt = await stripeRes.text().catch(() => "");
+  if (!raw) {
+    // webhook may not have arrived yet
     return asJSON(
       {
-        ok: false,
-        error: `Stripe session fetch failed: ${stripeRes.status}`,
-        body: txt,
+        ok: true,
+        found: false,
+        status: "pending",
       },
-      500,
+      200,
       cors
     );
   }
 
-  const session = await stripeRes.json();
-  // Return Stripe session directly (like your old `json(session)`)
-  return asJSON(session, 200, cors);
+  let data: any = {};
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    data = { raw };
+  }
+
+  return asJSON(
+    {
+      ok: true,
+      found: true,
+      ...data,
+    },
+    200,
+    cors
+  );
 }
 
 
@@ -757,7 +736,7 @@ export default {
     if (req.method === "POST" && path === "/api/checkout") return handleCheckout(req, env);
     if (req.method === "POST" && path === "/api/webhook") return handleWebhook(req, env);
     if (req.method === "GET" && path === "/api/confirm") return handleConfirm(req, env);
-    if (req.method === "GET" && path === "/api/checkout-session") { return handleCheckoutSession(req, env); }
+    if (req.method === "GET" && path === "/api/order-status ") { return handleOrderStatus(req, env); }
 
     // GAS proxies
     if (req.method === "GET" && path === "/api/headers") return handleHeaders(req, env);
