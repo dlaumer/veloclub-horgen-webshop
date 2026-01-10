@@ -80,8 +80,8 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
     regularImages = [product.image];
   }
   
-  // Build gallery items: if image3d exists, add it as the first item
-  const image3dValue = (product as any).image3d;
+  // Build gallery items: if image3d exists on the selected color, add it as the first item
+  const image3dValue = selectedColorData?.image3d;
   const has3dEmbed = image3dValue && typeof image3dValue === 'string' && image3dValue.trim() !== '';
   const galleryItems: Array<{ type: '3d' | 'image'; content: string }> = [];
   
