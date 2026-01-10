@@ -331,6 +331,10 @@ async function handleCheckout(req: Request, env: Env) {
     size: i.size || "",
     color: i.color || "",
     qty: Number(i.qty || 0),
+    // carry through for email + sheet (Zahls invoice does not include images)
+    name: i.name || i.title || "",
+    unit_amount: Math.round(Number(i.unit_amount || 0)),
+    image: i.image || "",
     isReturn: !!i.isReturn,
     returnDiscount: Number(i.returnDiscount || 0),
   }));
@@ -356,17 +360,21 @@ async function handleCheckout(req: Request, env: Env) {
 
     if (item.isReturn && item.returnDiscount > 0 && qty > 0) {
       const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
-      pushBasket(
-        discounted === 0 ? `${title} (Return - Free)` : `${title} (Return - Discounted)`,
-        1,
-        discounted,
-        item.sku
-      );
+
+      // IMPORTANT: Zahls/Payrexx may reject basket lines with amount=0 (misleading 403 “API secret not correct”)
+      if (discounted > 0) {
+        pushBasket(`${title} (Return - Discounted)`, 1, discounted, item.sku);
+      } else {
+        // discounted === 0 -> do NOT send a 0-amount basket line
+        // We still carry the information in custom_field "cart" for webhook/email/sheet.
+      }
+
       if (qty > 1) pushBasket(title, qty - 1, unitFull, item.sku);
     } else {
       pushBasket(title, qty, unitFull, item.sku);
     }
   }
+
 
   // Optional: force TWINT only. If your account ever rejects this, set false.
   const FORCE_TWINT_ONLY = true;
@@ -509,10 +517,10 @@ type ZahlsProduct = {
 function getOrderIdFromTx(tx: any) {
   return String(
     tx?.referenceId ||
-      tx?.invoice?.referenceId ||
-      tx?.invoice?.paymentLink?.referenceId ||
-      tx?.invoice?.number ||
-      tx?.id
+    tx?.invoice?.referenceId ||
+    tx?.invoice?.paymentLink?.referenceId ||
+    tx?.invoice?.number ||
+    tx?.id
   );
 }
 
@@ -680,51 +688,6 @@ async function finalizeOrderFromZahlsTx(env: Env, tx: any) {
   return { orderId };
 }
 
-// POST /api/free-order  (no payment; reuse same stock+email pipeline)
-async function handleFreeOrder(req: Request, env: Env) {
-  const origin = req.headers.get("Origin");
-  const allowed = allowlist(env);
-  const cors = corsHeaders(origin, allowed);
-
-  const body = await req.json().catch(() => ({} as any));
-  const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
-  const cart = Array.isArray(body?.cart) ? body.cart : [];
-  const customer = body?.customer || {};
-
-  if (!Array.isArray(cart) || cart.length === 0) {
-    return asJSON({ ok: false, error: "Empty cart" }, 400, cors);
-  }
-
-  // Build a tx-shaped object so we can reuse the webhook pipeline.
-  const tx = {
-    status: "confirmed",
-    mode: "FREE",
-    amount: Number(body?.amount ?? 0) || 0,
-    referenceId: orderId,
-    contact: {
-      email: customer?.email || "",
-      firstname: customer?.name || "",
-      lastname: customer?.lastName || "",
-    },
-    invoice: {
-      currency: "CHF",
-      products: (cart || []).map((c: any) => ({
-        sku: c?.sku || "",
-        name: c?.name || c?.title || c?.sku || "Artikel",
-        price: Number(c?.unit_amount || 0),
-      })),
-      custom_fields: [{ name: "cart", type: "text", value: JSON.stringify(cart) }],
-    },
-  };
-
-  try {
-    await finalizeOrderFromZahlsTx(env, tx);
-    return asJSON({ ok: true, orderId }, 200, cors);
-  } catch (e: any) {
-    const msg = String(e?.message || e);
-    return asJSON({ ok: false, error: msg }, 500, cors);
-  }
-}
 
 async function handleWebhook(req: Request, env: Env) {
   // --- simple auth ---
@@ -880,17 +843,34 @@ async function handleFreeOrder(req: Request, env: Env) {
   }
 
   // ---- Build items for email ----
-  const itemsForEmail = cart.map((c: any) => ({
-    sku: String(c?.sku || ""),
-    title: String(c?.name || c?.sku || "Artikel"),
-    size: c?.size ? String(c.size) : "",
-    color: c?.color ? String(c.color) : "",
-    qty: Number(c?.qty ?? 0) || 0,
-    unit_amount: 0,
-    image: c?.image || "",
-    isReturn: !!c?.isReturn,
-    returnDiscount: Number(c?.returnDiscount || 0) || 0,
-  }));
+  const itemsForEmail = cart.map((item: any) => {
+    const baseTitle = String(item?.name || item?.sku || "Artikel");
+
+    const unitFull = Math.round(Number(item?.unit_amount || 0));
+    const returnDiscount = Math.round(Number(item?.returnDiscount || 0));
+
+    const isFreeByReturn =
+      item?.isReturn &&
+      returnDiscount > 0 &&
+      Math.max(0, unitFull - returnDiscount) === 0;
+
+    const title = isFreeByReturn
+      ? `${baseTitle} (Return - Free)`
+      : baseTitle;
+
+    return {
+      sku: String(item?.sku || ""),
+      title,
+      size: item?.size ? String(item.size) : "",
+      color: item?.color ? String(item.color) : "",
+      qty: Number(item?.qty ?? 0) || 0,
+      unit_amount: 0, // keep 0 → Google Sheet total stays 0
+      image: item?.image || "",
+      isReturn: !!item?.isReturn,
+      returnDiscount,
+    };
+  });
+
 
   // ---- send email ----
   try {
