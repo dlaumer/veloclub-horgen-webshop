@@ -12,6 +12,7 @@ export interface Product {
     name: string;
     code: string;
     images: string[];
+    image3d?: string; // HTML embed code for 3D viewer per color variant
     sizes: Array<{
       name: string;
       stock: number;
