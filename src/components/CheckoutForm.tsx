@@ -176,7 +176,7 @@ export const CheckoutForm = ({
               className="w-full"
               disabled={isPaying}
             >
-              {isPaying ? t("updatingStock") : t("proceedToPayment")}
+              {isPaying ? t("processing") : t("proceedToPayment")}
             </Button>
           </form>
         </Form>

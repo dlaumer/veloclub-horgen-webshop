@@ -152,7 +152,7 @@ export const ShoppingCart = ({
                     variant="shop"
                     className="w-full"
                   >
-                    {t('checkout')}
+                    {`${total==0 ? t('reserve') : t('checkout')}`}
                   </Button>
                 </div>
               </div>

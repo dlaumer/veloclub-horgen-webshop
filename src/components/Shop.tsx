@@ -225,15 +225,13 @@ export const Shop = () => {
 
       // 4) Calculate total (same logic as worker: first return item is free)
       let totalCents = 0;
-      let foundFirstReturn = false;
       for (const item of cartPayload) {
         const qty = Math.max(0, Number(item.qty || 0));
         const unitFull = Math.round(Number(item.unit_amount || 0));
         if (!qty) continue;
 
-        if (item.isReturn && item.returnDiscount > 0 && !foundFirstReturn) {
+        if (item.isReturn && item.returnDiscount > 0) {
           // First return item: first unit is free
-          foundFirstReturn = true;
           const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
           totalCents += discounted;
           if (qty > 1) totalCents += (qty - 1) * unitFull;

@@ -115,9 +115,9 @@ export const translations = {
     en: "Pay",
     de: "Bezahlen"
   },
-  updatingStock: {
-    en: "Updating stock…",
-    de: "Bestand wird aktualisiert…"
+  processing: {
+    en: "Processing...",
+    de: "Wird verarbeitet..."
   },
   success: {
     en: "Success",
@@ -134,6 +134,10 @@ export const translations = {
   checkout: {
     en: "Checkout",
     de: "Zur Kasse"
+  },
+  reserve: {
+    en: "Reserve for free",
+    de: "Kostenlos bestellen"
   },
   contactDetails: {
     en: "Contact Details",
@@ -172,8 +176,8 @@ export const translations = {
     de: "Land"
   },
   proceedToPayment: {
-    en: "Proceed to Payment",
-    de: "Zur Zahlung"
+    en: "Proceed",
+    de: "Weiter"
   },
   fillAllFields: {
     en: "Please fill in all fields",
