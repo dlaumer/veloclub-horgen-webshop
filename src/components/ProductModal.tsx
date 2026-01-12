@@ -76,7 +76,7 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
       regularImages = trimmed.split(',').map(s => s.trim()).filter(Boolean);
     }
   }
-  const placeholderImage = '/placeholder.svg';
+  const placeholderImage = '/placeholder.png';
   
   if (regularImages.length === 0 && product.image) {
     regularImages = [product.image];

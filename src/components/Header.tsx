@@ -12,6 +12,7 @@ export const Header = ({ activeMainCategory, onMainCategoryChange }: HeaderProps
 
   const mainCategories = [
     { id: "velokleider", labelKey: "velokleider" as const },
+    { id: "casual", labelKey: "casual" as const },
     { id: "thomus", labelKey: "thomus" as const },
     // { id: "vch", labelKey: "vch" as const },
     // { id: "sonderkationen", labelKey: "sonderkationen" as const },

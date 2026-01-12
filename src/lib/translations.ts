@@ -195,6 +195,10 @@ export const translations = {
     en: "Cycling Apparel",
     de: "Velokleider"
   },
+  casual: {
+    en: "Casual",
+    de: "Casual"
+  },
   thomus: {
     en: "Thömus Bike & Parts",
     de: "Thömus Bike & Parts"

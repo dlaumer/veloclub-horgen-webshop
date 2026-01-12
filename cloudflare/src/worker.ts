@@ -377,7 +377,7 @@ async function handleCheckout(req: Request, env: Env) {
 
 
   // Optional: force TWINT only. If your account ever rejects this, set false.
-  const FORCE_TWINT_ONLY = true;
+  const FORCE_TWINT_ONLY = false;
 
   // ---- build unsigned params (NO instance, NO ApiSignature) ----
   const signEntries: Array<[string, string]> = [];
