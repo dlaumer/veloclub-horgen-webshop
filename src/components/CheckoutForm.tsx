@@ -23,10 +23,6 @@ const checkoutSchema = z.object({
   name: z.string().min(1, { message: "Name is required" }),
   lastName: z.string().min(1, { message: "Last name is required" }),
   email: z.string().email({ message: "Invalid email address" }),
-  street: z.string().min(1, { message: "Street is required" }),
-  city: z.string().min(1, { message: "City is required" }),
-  postalCode: z.string().min(1, { message: "Postal code is required" }),
-  country: z.string().min(1, { message: "Country is required" }),
 });
 
 export type CheckoutFormData = z.infer<typeof checkoutSchema>;
@@ -52,10 +48,6 @@ export const CheckoutForm = ({
       name: "",
       lastName: "",
       email: "",
-      street: "",
-      city: "",
-      postalCode: "",
-      country: "",
     },
   });
 
@@ -106,64 +98,6 @@ export const CheckoutForm = ({
                   <FormLabel>{t("email")}</FormLabel>
                   <FormControl>
                     <Input type="email" placeholder={t("email")} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="street"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("street")}</FormLabel>
-                  <FormControl>
-                    <Input placeholder={t("street")} {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="postalCode"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("postalCode")}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t("postalCode")} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="city"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>{t("city")}</FormLabel>
-                    <FormControl>
-                      <Input placeholder={t("city")} {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="country"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>{t("country")}</FormLabel>
-                  <FormControl>
-                    <Input placeholder={t("country")} {...field} />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
