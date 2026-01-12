@@ -21,7 +21,7 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
     >
       <div className="aspect-square mb-4 flex items-center justify-center bg-white rounded-lg overflow-hidden relative">
         <img
-          src={product.image}
+          src={product.image || '/placeholder.svg'}
           alt={product.name}
           className="w-full h-full object-contain"
         />
