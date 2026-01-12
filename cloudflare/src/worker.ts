@@ -280,11 +280,6 @@ async function handleCheckout(req: Request, env: Env) {
     email?: string;
     name?: string;
     lastName?: string;
-    phone?: string;
-    street?: string;
-    zip?: string;
-    place?: string;
-    countryISO?: string; // "CH"
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
@@ -406,11 +401,6 @@ async function handleCheckout(req: Request, env: Env) {
   if (buyer?.name) signEntries.push(["fields[forename][value]", String(buyer.name)]);
   if (buyer?.lastName) signEntries.push(["fields[surname][value]", String(buyer.lastName)]);
   if (buyer?.email) signEntries.push(["fields[email][value]", String(buyer.email)]);
-  if (buyer?.phone) signEntries.push(["fields[phone][value]", String(buyer.phone)]);
-  if (buyer?.street) signEntries.push(["fields[street][value]", String(buyer.street)]);
-  if (buyer?.zip) signEntries.push(["fields[postcode][value]", String(buyer.zip)]);
-  if (buyer?.place) signEntries.push(["fields[place][value]", String(buyer.place)]);
-  if (buyer?.countryISO) signEntries.push(["fields[country][value]", String(buyer.countryISO)]);
 
   // Custom field for webhook cart
   signEntries.push(["fields[custom_field_1][name]", "cart"]);
@@ -795,10 +785,6 @@ async function handleFreeOrder(req: Request, env: Env) {
     email?: string;
     name?: string;
     lastName?: string;
-    street?: string;
-    postalCode?: string;
-    city?: string;
-    country?: string;
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());

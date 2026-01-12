@@ -213,10 +213,6 @@ export const Shop = () => {
         name: data.name,
         lastName: data.lastName,
         email: data.email,
-        street: data.street,
-        postalCode: data.postalCode,
-        city: data.city,
-        country: data.country
       };
 
       // 3) Create a stable order id (also used as idempotency key server-side)
