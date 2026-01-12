@@ -76,6 +76,8 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
       regularImages = trimmed.split(',').map(s => s.trim()).filter(Boolean);
     }
   }
+  const placeholderImage = '/placeholder.svg';
+  
   if (regularImages.length === 0 && product.image) {
     regularImages = [product.image];
   }
@@ -92,9 +94,9 @@ export const ProductModal = ({ product, isOpen, returnAlreadyUsed, onClose, onAd
     galleryItems.push({ type: 'image', content: img });
   });
   
-  // Ensure we always have at least a fallback
+  // Ensure we always have at least a fallback placeholder
   if (galleryItems.length === 0) {
-    galleryItems.push({ type: 'image', content: product.image });
+    galleryItems.push({ type: 'image', content: product.image || placeholderImage });
   }
   
   const currentGalleryItem = galleryItems[currentImageIndex] || galleryItems[0];
