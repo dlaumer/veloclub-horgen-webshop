@@ -665,8 +665,10 @@ async function finalizeOrderFromZahlsTx(env: Env, tx: any) {
 
   // Extract kidzbike from custom fields
   const customFields = Array.isArray(tx?.invoice?.custom_fields) ? tx.invoice.custom_fields : [];
-  const kidzbikeCf = customFields.find((cf: any) => cf?.name === "kidzbike");
-  const kidzbike = kidzbikeCf?.value === "true";
+  const kidzbikeCf = customFields.find((cf: any) => String(cf?.name).toLowerCase() === "kidzbike");
+  // Payrexx may store value as string "true"/"false" or as boolean - handle both
+  const kidzbike = kidzbikeCf?.value === true || kidzbikeCf?.value === "true" || kidzbikeCf?.value === "1";
+  console.log("kidzbike extraction", { customFields: JSON.stringify(customFields), kidzbikeCf, kidzbike });
 
   const products = Array.isArray(tx?.invoice?.products) ? (tx.invoice.products as ZahlsProduct[]) : [];
   const itemsForEmail = buildItemsForEmail(cart, products);
