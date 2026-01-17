@@ -302,6 +302,10 @@ export const translations = {
   thankYouContact: {
     en: "If you do not receive an email or have any questions, please contact us.",
     de: "Falls Sie keine E-Mail erhalten oder Fragen haben, melden Sie sich bitte bei uns."
+  },
+  kidzbike: {
+    en: "Leiter*in KidzBike and/or RoadKidz",
+    de: "Leiter*in KidzBike und/oder RoadKidz"
   }
 
 };

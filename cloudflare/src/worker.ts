@@ -280,6 +280,7 @@ async function handleCheckout(req: Request, env: Env) {
     email?: string;
     name?: string;
     lastName?: string;
+    kidzbike?: boolean;
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
@@ -405,6 +406,10 @@ async function handleCheckout(req: Request, env: Env) {
   // Custom field for webhook cart
   signEntries.push(["fields[custom_field_1][name]", "cart"]);
   signEntries.push(["fields[custom_field_1][value]", JSON.stringify(compactCart)]);
+
+  // Custom field for kidzbike boolean
+  signEntries.push(["fields[custom_field_2][name]", "kidzbike"]);
+  signEntries.push(["fields[custom_field_2][value]", buyer?.kidzbike ? "true" : "false"]);
 
   // Basket lines
   basketLines.forEach((p, i) => {
@@ -658,6 +663,11 @@ async function finalizeOrderFromZahlsTx(env: Env, tx: any) {
     throw new Error("missing cart");
   }
 
+  // Extract kidzbike from custom fields
+  const customFields = Array.isArray(tx?.invoice?.custom_fields) ? tx.invoice.custom_fields : [];
+  const kidzbikeCf = customFields.find((cf: any) => cf?.name === "kidzbike");
+  const kidzbike = kidzbikeCf?.value === "true";
+
   const products = Array.isArray(tx?.invoice?.products) ? (tx.invoice.products as ZahlsProduct[]) : [];
   const itemsForEmail = buildItemsForEmail(cart, products);
 
@@ -680,6 +690,7 @@ async function finalizeOrderFromZahlsTx(env: Env, tx: any) {
       currency: "CHF",
       total,
       items: itemsForEmail,
+      kidzbike,
     });
   } catch (err) {
     console.error("sendOrderEmail threw", { orderId, err });
@@ -785,6 +796,7 @@ async function handleFreeOrder(req: Request, env: Env) {
     email?: string;
     name?: string;
     lastName?: string;
+    kidzbike?: boolean;
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
@@ -875,7 +887,7 @@ async function handleFreeOrder(req: Request, env: Env) {
 
     const emailBody = {
       action: "sendOrderEmail",
-      order: { orderId, name, email, currency: "CHF", total: 0, items: itemsForEmail },
+      order: { orderId, name, email, currency: "CHF", total: 0, items: itemsForEmail, kidzbike: !!buyer?.kidzbike },
     };
 
     const emailTarget = gasTarget(env, "sendOrderEmail");
