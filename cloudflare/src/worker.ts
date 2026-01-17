@@ -565,7 +565,7 @@ function buildItemsForEmail(cart: any[], products: ZahlsProduct[]) {
       !!c?.isReturn && Number(c?.returnDiscount || 0) > 0;
 
     const title = hasReturnDiscount
-      ? `${baseTitle} (Gratis - Rückgabe)`
+      ? `${baseTitle} (Gratis gegen Rückgabe)`
       : baseTitle;
 
     // Zahls price is already cents
@@ -863,7 +863,7 @@ async function handleFreeOrder(req: Request, env: Env) {
       Math.max(0, unitFull - returnDiscount) === 0;
 
     const title = isFreeByReturn
-      ? `${baseTitle} (Gratis - Rückgabe)`
+      ? `${baseTitle} (Gratis gegen Rückgabe)`
       : baseTitle;
 
     return {

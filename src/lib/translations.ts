@@ -276,16 +276,16 @@ export const translations = {
     de: "Max. auf Lager"
   },
   returnOldItem: {
-    en: "Return old item",
-    de: "Altes Produkt zurückgeben"
+    en: "Free with return/ Free without return for new Leiter*in KidzBike and/or RoadKidz",
+    de: "Gratis gegen Rückgabe /Gratis ohne Rückgabe für neue Leiter*in KidzBike und/oder RoadKidz"
   },
   returnDiscount: {
     en: "Return discount",
     de: "Rückgabe-Rabatt"
   },
   freeItem: {
-    en: "(Free - Return)",
-    de: "(Gratis - Rückgabe)"
+    en: "(Free with Return)",
+    de: "(Gratis gegen Rückgabe)"
   },
   returnAlreadyUsed: {
     en: "Return already used",
@@ -304,8 +304,8 @@ export const translations = {
     de: "Falls Sie keine E-Mail erhalten oder Fragen haben, melden Sie sich bitte bei uns."
   },
   kidzbike: {
-    en: "Leiter*in KidzBike and/or RoadKidz",
-    de: "Leiter*in KidzBike und/oder RoadKidz"
+    en: "KidzBike leader and/or RoadKidz without item return",
+    de: "Leiter*in KidzBike und/oder RoadKidz ohne Kleiderrückgabe"
   }
 
 };
