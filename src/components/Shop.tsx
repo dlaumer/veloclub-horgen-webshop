@@ -214,6 +214,7 @@ export const Shop = () => {
         lastName: data.lastName,
         email: data.email,
         kidzbike: data.kidzbike,
+        comments: data.comments || "",
       };
 
       // 3) Create a stable order id (also used as idempotency key server-side)
