@@ -281,6 +281,7 @@ async function handleCheckout(req: Request, env: Env) {
     name?: string;
     lastName?: string;
     kidzbike?: boolean;
+    comments?: string;
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
@@ -410,6 +411,10 @@ async function handleCheckout(req: Request, env: Env) {
   // Custom field for kidzbike boolean
   signEntries.push(["fields[custom_field_2][name]", "kidzbike"]);
   signEntries.push(["fields[custom_field_2][value]", buyer?.kidzbike ? "true" : "false"]);
+
+  // Custom field for comments
+  signEntries.push(["fields[custom_field_3][name]", "comments"]);
+  signEntries.push(["fields[custom_field_3][value]", String(buyer?.comments || "")]);
 
   // Basket lines
   basketLines.forEach((p, i) => {
@@ -668,7 +673,10 @@ async function finalizeOrderFromZahlsTx(env: Env, tx: any) {
   const kidzbikeCf = customFields.find((cf: any) => String(cf?.name).toLowerCase() === "kidzbike");
   // Payrexx may store value as string "true"/"false" or as boolean - handle both
   const kidzbike = kidzbikeCf?.value === true || kidzbikeCf?.value === "true" || kidzbikeCf?.value === "1";
-  console.log("kidzbike extraction", { customFields: JSON.stringify(customFields), kidzbikeCf, kidzbike });
+
+  // Extract comments from custom fields
+  const commentsCf = customFields.find((cf: any) => String(cf?.name).toLowerCase() === "comments");
+  const comments = String(commentsCf?.value || "");
 
   const products = Array.isArray(tx?.invoice?.products) ? (tx.invoice.products as ZahlsProduct[]) : [];
   const itemsForEmail = buildItemsForEmail(cart, products);
@@ -693,6 +701,7 @@ async function finalizeOrderFromZahlsTx(env: Env, tx: any) {
       total,
       items: itemsForEmail,
       kidzbike,
+      comments,
     });
   } catch (err) {
     console.error("sendOrderEmail threw", { orderId, err });
@@ -799,6 +808,7 @@ async function handleFreeOrder(req: Request, env: Env) {
     name?: string;
     lastName?: string;
     kidzbike?: boolean;
+    comments?: string;
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
@@ -889,7 +899,7 @@ async function handleFreeOrder(req: Request, env: Env) {
 
     const emailBody = {
       action: "sendOrderEmail",
-      order: { orderId, name, email, currency: "CHF", total: 0, items: itemsForEmail, kidzbike: !!buyer?.kidzbike },
+      order: { orderId, name, email, currency: "CHF", total: 0, items: itemsForEmail, kidzbike: !!buyer?.kidzbike, comments: buyer?.comments || "" },
     };
 
     const emailTarget = gasTarget(env, "sendOrderEmail");

@@ -17,6 +17,7 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 
@@ -25,6 +26,7 @@ const checkoutSchema = z.object({
   lastName: z.string().min(1, { message: "Last name is required" }),
   email: z.string().email({ message: "Invalid email address" }),
   kidzbike: z.boolean().default(false),
+  comments: z.string().max(500).optional(),
 });
 
 export type CheckoutFormData = z.infer<typeof checkoutSchema>;
@@ -51,6 +53,7 @@ export const CheckoutForm = ({
       lastName: "",
       email: "",
       kidzbike: false,
+      comments: "",
     },
   });
 
@@ -121,6 +124,25 @@ export const CheckoutForm = ({
                   <FormLabel className="font-normal cursor-pointer">
                     {t("kidzbike")}
                   </FormLabel>
+                </FormItem>
+              )}
+            />
+
+            <FormField
+              control={form.control}
+              name="comments"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel>{t("comments")}</FormLabel>
+                  <FormControl>
+                    <Textarea
+                      placeholder={t("comments")}
+                      className="resize-none"
+                      rows={3}
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage />
                 </FormItem>
               )}
             />

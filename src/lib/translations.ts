@@ -306,6 +306,10 @@ export const translations = {
   kidzbike: {
     en: "KidzBike leader and/or RoadKidz without item return",
     de: "Leiter*in KidzBike und/oder RoadKidz ohne Kleiderrückgabe"
+  },
+  comments: {
+    en: "Comments",
+    de: "Bemerkungen"
   }
 
 };
