@@ -1,8 +1,11 @@
 import { ShoppingCart as ShoppingCartIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { CartItem } from "@/types/shop";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSelector } from "@/components/LanguageSelector";
+import { calculateCartTotals } from "@/lib/returnDiscount";
+import { FormEvent, useState } from "react";
 
 interface ShoppingCartProps {
   items: CartItem[];
@@ -10,6 +13,9 @@ interface ShoppingCartProps {
   onToggle: () => void;
   onRemoveItem: (itemId: string) => void;
   onCheckout: () => void;
+  onApplyPromoCode: (code: string) => void;
+  onClearPromoCode: () => void;
+  isReturnPromoApplied: boolean;
   isPaying?: boolean;
 }
 
@@ -19,21 +25,25 @@ export const ShoppingCart = ({
   onToggle,
   onRemoveItem,
   onCheckout,
+  onApplyPromoCode,
+  onClearPromoCode,
+  isReturnPromoApplied,
   isPaying = false,
 }: ShoppingCartProps) => {
   const { t } = useTranslation();
+  const [promoCode, setPromoCode] = useState("");
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const { discountedItems, returnDiscount, total } = calculateCartTotals(items, isReturnPromoApplied);
 
-  // Calculate return discount: each return-eligible item discounts max one unit
-  const returnItems = items.filter(item => item.isReturn);
+  const handlePromoSubmit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    onApplyPromoCode(promoCode);
+  };
 
-  const returnDiscount = returnItems.reduce(
-    (sum, item) => sum + item.price,
-    0
-  );
-
-  const total = subtotal - returnDiscount;
+  const handlePromoClear = () => {
+    setPromoCode("");
+    onClearPromoCode();
+  };
 
   return (
     <>
@@ -82,7 +92,7 @@ export const ShoppingCart = ({
                 <p className="text-muted-foreground text-center py-8">{t('yourCartIsEmpty')}</p>
               ) : (
                 <div className="space-y-4">
-                  {items.map((item) => (
+                  {discountedItems.map((item) => (
                     <div key={item.id} className="flex gap-3">
                       <img
                         src={item.image}
@@ -100,13 +110,13 @@ export const ShoppingCart = ({
                         <p className="text-xs text-muted-foreground">
                           {t('amount')}: {item.quantity}
                         </p>
-                        {item.isReturn && (
+                        {item.isFreeByReturnPromo && (
                           <p className="text-xs text-green-600 font-medium">
                             {t('freeItem')}
                           </p>
                         )}
                         <p className="font-semibold text-sm mt-1">
-                          CHF {item.price.toFixed(2)}
+                          CHF {(item.price * item.quantity).toFixed(2)}
                         </p>
                       </div>
                       <button
@@ -124,6 +134,24 @@ export const ShoppingCart = ({
             {/* Summary */}
             {items.length > 0 && (
               <div className="border-t border-border p-4 space-y-2">
+                <form onSubmit={handlePromoSubmit} className="flex gap-2">
+                  <Input
+                    value={promoCode}
+                    onChange={(event) => setPromoCode(event.target.value)}
+                    placeholder={t('promoCode')}
+                    disabled={isPaying || isReturnPromoApplied}
+                    className="h-10"
+                  />
+                  {isReturnPromoApplied ? (
+                    <Button type="button" variant="outline" onClick={handlePromoClear} disabled={isPaying}>
+                      {t('remove')}
+                    </Button>
+                  ) : (
+                    <Button type="submit" variant="outline" disabled={isPaying || promoCode.trim() === ""}>
+                      {t('apply')}
+                    </Button>
+                  )}
+                </form>
                 {returnDiscount > 0 && (
                   <div className="flex justify-between text-sm text-green-600">
                     <span>{t('returnDiscount')}</span>

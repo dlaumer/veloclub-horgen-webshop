@@ -275,17 +275,13 @@ export const translations = {
     en: "Max in stock",
     de: "Max. auf Lager"
   },
-  returnOldItem: {
-    en: "Free with return/ Free without return for new Leiter*in KidzBike and/or RoadKidz",
-    de: "Gratis gegen Rückgabe /Gratis ohne Rückgabe für neue Leiter*in KidzBike und/oder RoadKidz"
-  },
   returnDiscount: {
-    en: "Return discount",
-    de: "Rückgabe-Rabatt"
+    en: "Promocde discount",
+    de: "Promocode-Rabatt"
   },
   freeItem: {
-    en: "(Free with Return)",
-    de: "(Gratis gegen Rückgabe)"
+    en: "(1 Free with Promocode)",
+    de: "(1 Gratis mit Promocode)"
   },
   returnAlreadyUsed: {
     en: "Return already used",
@@ -310,6 +306,22 @@ export const translations = {
   comments: {
     en: "Comments",
     de: "Bemerkungen"
+  },
+  promoCode: {
+    en: "Promo code",
+    de: "Promocode"
+  },
+  apply: {
+    en: "Apply",
+    de: "Einlösen"
+  },
+  invalidPromoCode: {
+    en: "Invalid promo code",
+    de: "Ungültiger Promocode"
+  },
+  promoCodeApplied: {
+    en: "Promo code applied",
+    de: "Promocode eingelöst"
   }
 
 };

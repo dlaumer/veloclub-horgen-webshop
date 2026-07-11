@@ -21,6 +21,7 @@ interface Env {
 
   SUCCESS_URL?: string;
   CANCEL_URL?: string;
+  RETURN_PROMO_CODE?: string;
 }
 
 type CartItem = {
@@ -34,6 +35,7 @@ type CartItem = {
   image?: string;
   isReturn?: boolean;      // true if user is returning old item
   returnDiscount?: number; // in Rappen
+  returnCategory?: string;
 };
 
 declare const caches: CacheStorage;
@@ -273,6 +275,68 @@ function buildReturnUrls(req: Request, env: Env, orderId?: string) {
   return { success, cancel };
 }
 
+function normalizeReturnCategory(category: unknown) {
+  const normalized = String(category || "").trim().toLowerCase();
+  return normalized && normalized !== "no" ? normalized : "";
+}
+
+function isValidReturnPromo(promoCode: unknown, env: Env) {
+  const expected = String(env.RETURN_PROMO_CODE || "PROMOWEBSHOP").trim().toUpperCase();
+  return String(promoCode || "").trim().toUpperCase() === expected;
+}
+
+function applyReturnPromoDiscounts(cart: CartItem[], promoCode: unknown, env: Env) {
+  const normalizedCart = cart.map((item) => ({
+    ...item,
+    isReturn: false,
+    returnDiscount: 0,
+    returnCategory: normalizeReturnCategory(item.returnCategory) || "no",
+  }));
+
+  if (!isValidReturnPromo(promoCode, env)) return normalizedCart;
+
+  const cheapestByCategory = new Map<string, number>();
+
+  normalizedCart.forEach((item, index) => {
+    const category = normalizeReturnCategory(item.returnCategory);
+    const qty = Math.max(0, Number(item.qty || 0));
+    const unitFull = Math.round(Number(item.unit_amount || 0));
+    if (!category || !qty || unitFull <= 0) return;
+
+    const currentIndex = cheapestByCategory.get(category);
+    if (currentIndex == null || unitFull < Math.round(Number(normalizedCart[currentIndex].unit_amount || 0))) {
+      cheapestByCategory.set(category, index);
+    }
+  });
+
+  cheapestByCategory.forEach((index) => {
+    normalizedCart[index].isReturn = true;
+    normalizedCart[index].returnDiscount = Math.round(Number(normalizedCart[index].unit_amount || 0));
+  });
+
+  return normalizedCart;
+}
+
+function calculateCartTotalCents(cart: CartItem[]) {
+  let totalCents = 0;
+
+  for (const item of cart) {
+    const qty = Math.max(0, Number(item.qty || 0));
+    const unitFull = Math.round(Number(item.unit_amount || 0));
+    if (!qty) continue;
+
+    if (item.isReturn && item.returnDiscount > 0) {
+      const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
+      totalCents += discounted;
+      if (qty > 1) totalCents += (qty - 1) * unitFull;
+    } else {
+      totalCents += qty * unitFull;
+    }
+  }
+
+  return totalCents;
+}
+
 // --- main ---
 async function handleCheckout(req: Request, env: Env) {
   const body = await req.json().catch(() => ({} as any));
@@ -285,13 +349,14 @@ async function handleCheckout(req: Request, env: Env) {
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
-  const cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
+  let cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
 
   const origin = req.headers.get("Origin");
   const allowed = allowlist(env);
   const cors = corsHeaders(origin, allowed);
 
   if (!cart.length) return asJSON({ error: "Empty cart" }, 400, cors);
+  cart = applyReturnPromoDiscounts(cart, body?.promoCode, env);
 
   const instance = env.ZAHLS_INSTANCE;
   const apiSecret = env.ZAHLS_API_SECRET || env.ZAHLS_API_KEY;
@@ -301,22 +366,7 @@ async function handleCheckout(req: Request, env: Env) {
 
   const { success, cancel } = buildReturnUrls(req, env, orderId);
 
-  // --- compute total cents (same intent as your Stripe code) ---
-  let totalCents = 0;
-
-  for (const item of cart) {
-    const qty = Math.max(0, Number(item.qty || 0));
-    const unitFull = Math.round(Number(item.unit_amount || 0)); // cents
-    if (!qty) continue;
-
-    if (item.isReturn && item.returnDiscount > 0 && qty > 0) {
-      const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
-      totalCents += discounted;
-      if (qty > 1) totalCents += (qty - 1) * unitFull;
-    } else {
-      totalCents += qty * unitFull;
-    }
-  }
+  const totalCents = calculateCartTotalCents(cart);
 
   if (!Number.isFinite(totalCents) || totalCents <= 0) {
     return asJSON({ error: "Invalid total" }, 400, cors);
@@ -334,6 +384,7 @@ async function handleCheckout(req: Request, env: Env) {
     image: i.image || "",
     isReturn: !!i.isReturn,
     returnDiscount: Number(i.returnDiscount || 0),
+    returnCategory: normalizeReturnCategory(i.returnCategory) || "no",
   }));
 
   // Build basket lines with the same split logic so Zahls invoice matches your total
@@ -570,7 +621,7 @@ function buildItemsForEmail(cart: any[], products: ZahlsProduct[]) {
       !!c?.isReturn && Number(c?.returnDiscount || 0) > 0;
 
     const title = hasReturnDiscount
-      ? `${baseTitle} (Gratis gegen Rückgabe)`
+      ? `${baseTitle} (Gratis mit Promocode)`
       : baseTitle;
 
     // Zahls price is already cents
@@ -590,6 +641,7 @@ function buildItemsForEmail(cart: any[], products: ZahlsProduct[]) {
       image: c?.image || "",
       isReturn: !!c?.isReturn,
       returnDiscount: Number(c?.returnDiscount || 0) || 0,
+      returnCategory: normalizeReturnCategory(c?.returnCategory) || "no",
     };
   });
 }
@@ -597,7 +649,7 @@ function buildItemsForEmail(cart: any[], products: ZahlsProduct[]) {
 
 async function commitStock(env: Env, orderId: string, cart: any[]) {
   const stockPayload = {
-    items: cart.map((i: any) => ({
+    items: cart.map((i) => ({
       sku: String(i.sku || ""),
       size: String(i.size || ""),
       color: String(i.color || ""),
@@ -812,9 +864,14 @@ async function handleFreeOrder(req: Request, env: Env) {
   };
 
   const orderId = body?.orderId ? String(body.orderId) : String(Date.now());
-  const cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
+  let cart = (Array.isArray(body?.cart) ? (body.cart as CartItem[]) : []) as CartItem[];
 
   if (!cart.length) return asJSON({ error: "Empty cart" }, 400, cors);
+  cart = applyReturnPromoDiscounts(cart, body?.promoCode, env);
+
+  if (calculateCartTotalCents(cart) !== 0) {
+    return asJSON({ error: "Free order total must be zero" }, 400, cors);
+  }
 
   // ---- commit stock via GAS ----
   const stockPayload = {
@@ -875,7 +932,7 @@ async function handleFreeOrder(req: Request, env: Env) {
       Math.max(0, unitFull - returnDiscount) === 0;
 
     const title = isFreeByReturn
-      ? `${baseTitle} (Gratis gegen Rückgabe)`
+      ? `${baseTitle} (Gratis mit Promocode)`
       : baseTitle;
 
     return {
@@ -888,6 +945,7 @@ async function handleFreeOrder(req: Request, env: Env) {
       image: item?.image || "",
       isReturn: !!item?.isReturn,
       returnDiscount,
+      returnCategory: normalizeReturnCategory(item?.returnCategory) || "no",
     };
   });
 

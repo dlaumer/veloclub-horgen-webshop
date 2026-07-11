@@ -10,11 +10,13 @@ import { CheckoutForm, CheckoutFormData } from "./CheckoutForm";
 import { Product, CartItem, CartState } from "@/types/shop";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
+import { calculateCartTotals, normalizeReturnCategory } from "@/lib/returnDiscount";
 
 // NEW: stock APIs
 import { fetchStock, type Product as StockProduct } from "@/lib/stockApi"; // <-- add commitStockOnPay
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
+const RETURN_PROMO_CODE = (import.meta.env.VITE_RETURN_PROMO_CODE || "PROMOWEBSHOP").trim().toUpperCase();
 
 // Derive filters dynamically from products
 
@@ -29,6 +31,7 @@ export const Shop = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [cart, setCart] = useState<CartState>({ items: [], isOpen: false });
+  const [returnPromoCode, setReturnPromoCode] = useState("");
   const [isPaying, setIsPaying] = useState(false); // <-- NEW
   const { toast } = useToast();
 
@@ -112,25 +115,21 @@ export const Shop = () => {
     return filtered;
   }, [activeMainCategory, activeCategory, allProducts, currentFilters]);
 
-  const returnAlreadyUsedForThisProduct = cart.items.some(
-    (it) => it.productId === selectedProduct?.id && it.isReturn === true
-  );
-
   const handleProductClick = (product: Product) => {
     setSelectedProduct(product);
     setIsModalOpen(true);
   };
 
-  const handleAddToCart = (productId: string, size: string, color: string, colorId: string, quantity: number = 1, image: string, isReturn?: boolean) => {
+  const handleAddToCart = (productId: string, size: string, color: string, colorId: string, quantity: number = 1, image: string) => {
     const product = allProducts.find((p) => p.id === productId);
     if (!product) return;
+    const returnCategory = normalizeReturnCategory(product.isReturn) || "no";
 
     const existingItemIndex = cart.items.findIndex(
       (item) =>
         item.productId === productId &&
         item.size === size &&
-        item.colorId === colorId &&
-        item.isReturn === isReturn
+        item.colorId === colorId
     );
 
     if (existingItemIndex >= 0) {
@@ -139,7 +138,7 @@ export const Shop = () => {
       setCart((prev) => ({ ...prev, items: updatedItems }));
     } else {
       const newItem: CartItem = {
-        id: `${productId}-${size}-${colorId}-${isReturn ? 'return' : 'normal'}-${Date.now()}`,
+        id: `${productId}-${size}-${colorId}-${Date.now()}`,
         productId,
         name: product.name,
         price: product.price,
@@ -148,7 +147,7 @@ export const Shop = () => {
         colorId,          // 👈 IMPORTANT: this is the SKU per color (article number)
         quantity: quantity,
         image: image,
-        isReturn: isReturn,
+        returnCategory,
       };
       setCart((prev) => ({ ...prev, items: [...prev.items, newItem] }));
     }
@@ -175,6 +174,27 @@ export const Shop = () => {
     setIsCheckoutFormOpen(true);
   };
 
+  const handleApplyPromoCode = (code: string) => {
+    const normalizedCode = code.trim().toUpperCase();
+
+    if (normalizedCode !== RETURN_PROMO_CODE) {
+      toast({
+        title: t('invalidPromoCode'),
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setReturnPromoCode(normalizedCode);
+    toast({
+      title: t('promoCodeApplied'),
+    });
+  };
+
+  const handleClearPromoCode = () => {
+    setReturnPromoCode("");
+  };
+
   function chfToRappen(x: number | string) {
     // robust gegen "205.50" (string) und float-Rundungsfehler
     return Math.round(Number(x) * 100);
@@ -187,9 +207,11 @@ export const Shop = () => {
 
     try {
       setIsPaying(true);
+      const isReturnPromoApplied = returnPromoCode.trim().toUpperCase() === RETURN_PROMO_CODE;
+      const { discountedItems } = calculateCartTotals(cart.items, isReturnPromoApplied);
 
       // 1) Map your cart to what the Worker expects
-      const cartPayload = cart.items.map((i) => ({
+      const cartPayload = discountedItems.map((i) => ({
         sku: i.colorId,           // your SKU per color/variant
         size: i.size,
         color: i.color,
@@ -197,8 +219,9 @@ export const Shop = () => {
         name: i.name,
         unit_amount: chfToRappen(i.price),     // in Rappen (CHF * 100)
         image: i.image ?? "",
-        isReturn: i.isReturn ?? false,
-        returnDiscount: i.isReturn ? chfToRappen(i.price) : 0
+        returnCategory: i.returnCategory ?? "no",
+        isReturn: i.isFreeByReturnPromo,
+        returnDiscount: chfToRappen(i.returnDiscount),
       }));
 
       if (cartPayload.length === 0) {
@@ -247,6 +270,7 @@ export const Shop = () => {
         body: JSON.stringify({
           customer,
           cart: cartPayload,
+          promoCode: returnPromoCode,
           orderId,
         })
       });
@@ -351,12 +375,12 @@ export const Shop = () => {
         <ProductModal
           product={selectedProduct}
           isOpen={isModalOpen}
+          cartItems={cart.items}
           onClose={() => {
             setIsModalOpen(false);
             setSelectedProduct(null);
           }}
           onAddToCart={handleAddToCart}
-          returnAlreadyUsed={returnAlreadyUsedForThisProduct}
         />
 
         <ShoppingCart
@@ -365,6 +389,9 @@ export const Shop = () => {
           onToggle={handleToggleCart}
           onRemoveItem={handleRemoveFromCart}
           onCheckout={handleCheckout}
+          onApplyPromoCode={handleApplyPromoCode}
+          onClearPromoCode={handleClearPromoCode}
+          isReturnPromoApplied={returnPromoCode.trim().toUpperCase() === RETURN_PROMO_CODE}
           isPaying={isPaying}
         />
 

@@ -20,7 +20,7 @@ export interface Product {
     }>;
   }>;
   description?: string;
-  isReturn?: string; // 'yes' | 'no' | undefined - indicates if item is eligible for return exchange
+  isReturn?: string; // 'no' or a return category like 'shirt', 'pant', etc.
 }
 
 export interface CartItem {
@@ -33,7 +33,7 @@ export interface CartItem {
   colorId: string;
   quantity: number;
   image: string;
-  isReturn?: boolean; // true if user is returning old item for this product
+  returnCategory?: string; // product return category, or 'no' if not eligible
 }
 
 export interface CartState {

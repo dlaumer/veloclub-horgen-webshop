@@ -15,7 +15,7 @@ export type Product = {
   category: string;
   justStock?: string;
   description?: string;
-  isReturn?: string; // 'yes' | 'no' | undefined
+  isReturn?: string; // 'no' or a return category like 'shirt', 'pant', etc.
   colors: Array<{
     id: string;
     name: string;
