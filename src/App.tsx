@@ -4,10 +4,14 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { LanguageProvider } from "@/contexts/LanguageContext";
+import { AdminAuthProvider } from "@/contexts/AdminAuthContext";
+import { RequireAdminAuth } from "@/components/admin/RequireAdminAuth";
 import Index from "./pages/Index";
 import NotFound from "./pages/NotFound";
 import ThankYouPage from "@/components/ThankYouPage";
 import CancelledPage from "@/components/CancelledPage";
+import AdminLogin from "./pages/AdminLogin";
+import AdminDashboard from "./pages/AdminDashboard";
 
 const queryClient = new QueryClient();
 
@@ -30,6 +34,24 @@ const App = () => (
           <Routes>
             <Route path="/thank-you" element={<ThankYouPage />} />
             <Route path="/cancelled" element={<CancelledPage />} />
+            <Route
+              path="/admin/login"
+              element={
+                <AdminAuthProvider>
+                  <AdminLogin />
+                </AdminAuthProvider>
+              }
+            />
+            <Route
+              path="/admin"
+              element={
+                <AdminAuthProvider>
+                  <RequireAdminAuth>
+                    <AdminDashboard />
+                  </RequireAdminAuth>
+                </AdminAuthProvider>
+              }
+            />
             <Route path="/" element={<Index />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
             <Route path="*" element={<NotFound />} />
