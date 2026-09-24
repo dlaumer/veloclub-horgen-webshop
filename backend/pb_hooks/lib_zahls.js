@@ -477,6 +477,10 @@ function finalizeOrder(app, input) {
   order.set("payment_provider", input.paymentProvider || "")
   order.set("payment_status", input.paymentStatus || "")
   order.set("amount_paid", Math.round(Number(input.amountCents || 0)) / 100)
+  // the actual fee Zahls/Payrexx charged for this transaction (0 for free
+  // orders, which never pass providerFeeCents at all) - see
+  // 1783909000_orders_provider_fee.js for where this comes from.
+  order.set("provider_fee", Math.round(Number(input.providerFeeCents || 0)) / 100)
   order.set("currency", input.currency || "CHF")
   order.set("provider_tx_id", input.providerTxId || "")
   order.set("placed_at", new Date().toISOString())

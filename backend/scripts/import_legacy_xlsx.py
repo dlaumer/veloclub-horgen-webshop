@@ -22,6 +22,7 @@ order_number, so anything already imported is skipped instead of duplicated.
 
 import re
 import sys
+from datetime import datetime
 import openpyxl
 import requests
 
@@ -56,6 +57,47 @@ def parse_image_urls(raw):
     if s.startswith("[") and s.endswith("]"):
         s = s[1:-1]
     return [u.strip() for u in s.split(",") if u.strip()]
+
+
+# Payment gateway fee model used to derive the amount actually received per
+# order. Do NOT read "Tatsächlich eingegangen" / "Summe Pro Kunde" directly -
+# they turned out to be unreliable (in particular: blank whenever whoever
+# filled in the sheet forgot to fill them in for a new order, which silently
+# produced amount_paid/price_paid = 0 for otherwise perfectly normal paid
+# orders). Instead: sum "Preis Total" across all of a client's order rows
+# (0 there means a genuinely free/return-promo line, so it correctly stays
+# 0), then apply the fee once per order (fees are charged per transaction,
+# not per line item). Same formula as import_legacy_xlsx.mjs's
+# computeActualAmount / sync_legacy_xlsx.py's compute_actual_amount - keep
+# all three in sync if this ever changes.
+FEE_RATE = 0.029
+FEE_FIXED = 0.30
+
+
+def compute_actual_amount(total_price):
+    raw = total_price * (1 - FEE_RATE) - FEE_FIXED
+    # clamp at 0 - a free (return-promo) order has no real transaction, so it
+    # can't have "received" a negative amount.
+    return max(0.0, round(raw, 2))
+
+
+def line_charged_amount(ws, row, col):
+    """The charged amount for one order row - "Preis Total", forced to 0 if
+    isReturn is checked (a return-promo item was given away free, even if
+    the sheet's "Preis Total" cell for that row wasn't actually updated to
+    0). "Preis pro Artikel" (unit price) never factors into this - it's
+    stored on order_items.unit_price purely as reference info."""
+    if ws.cell(row=row, column=col["isReturn"]).value:
+        return 0.0
+    return float(ws.cell(row=row, column=col["Preis Total"]).value or 0)
+
+
+# Only orders placed after this date get created/corrected by a run of this
+# script - per request, to scope a fix to recently-affected orders rather
+# than touching the entire historical dataset. Bump/remove this for a
+# future full re-import. Naive (no tzinfo) - openpyxl gives back naive
+# datetimes for Excel date cells, and comparing naive-to-aware raises.
+ORDER_CUTOFF = datetime(2026, 7, 12)
 
 
 def header_map(ws, header_row):
@@ -234,6 +276,7 @@ def import_orders(wb, pb, article_id_by_number):
 
     n_orders = 0
     n_items = 0
+    n_items_corrected = 0
     n_logs = 0
 
     for oid, rows in orders.items():
@@ -246,12 +289,31 @@ def import_orders(wb, pb, article_id_by_number):
         timestamp = ws.cell(row=first, column=col["Timestamp"]).value
         placed_at = timestamp.isoformat() if hasattr(timestamp, "isoformat") else ""
 
+        # Scope this run to recently-affected orders only (see ORDER_CUTOFF).
+        if not isinstance(timestamp, datetime) or timestamp <= ORDER_CUTOFF:
+            continue
+
+        # Don't trust "Tatsächlich eingegangen" / "Summe Pro Kunde" - see the
+        # module docstring above compute_actual_amount. Never let "Preis pro
+        # Artikel" (unit price) influence this either - only line_charged_
+        # amount() (normally "Preis Total", forced to 0 for a return-promo
+        # row) does.
+        total_price = sum(line_charged_amount(ws, r, col) for r in rows)
+        actual_amount = compute_actual_amount(total_price)
+
         existing_order = pb.find_one("orders", f'order_number = "{oid}"')
 
         if existing_order:
             order_rec = existing_order
             create_items = False
             print(f"  orders: {oid} already exists, skipping create")
+
+            # correct amount_paid if an earlier run stored the old, wrong
+            # value (e.g. the "Summe Pro Kunde was blank" bug)
+            existing_amount = existing_order.get("amount_paid") or 0
+            if abs(existing_amount - actual_amount) > 0.001:
+                print(f"    orders: correcting amount_paid for {oid}: {existing_amount} -> {actual_amount}")
+                pb.update("orders", order_rec["id"], {"amount_paid": actual_amount})
         else:
             order_data = {
                 "order_number": oid,
@@ -262,7 +324,7 @@ def import_orders(wb, pb, article_id_by_number):
                 "comments": ws.cell(row=first, column=col["Comments"]).value or "",
                 "payment_provider": "legacy",
                 "payment_status": "confirmed",
-                "amount_paid": ws.cell(row=first, column=col["Summe Pro Kunde"]).value or 0,
+                "amount_paid": actual_amount,
                 "currency": ws.cell(row=first, column=col["Währung"]).value or "CHF",
                 "placed_at": placed_at,
                 # tri-state text field: "" = unknown. Legacy data doesn't tell
@@ -275,7 +337,7 @@ def import_orders(wb, pb, article_id_by_number):
             order_rec = pb.create("orders", order_data)
             n_orders += 1
             create_items = True
-            print(f"  orders: created {oid} ({buyer_name} {buyer_lastname})")
+            print(f"  orders: created {oid} ({buyer_name} {buyer_lastname}), amount_paid={actual_amount}")
 
         # Backfill support: an earlier run of this script (before "logs"
         # support was added) may have already created this order without a
@@ -288,8 +350,9 @@ def import_orders(wb, pb, article_id_by_number):
             )
             need_log = not already_logged
 
-        if not create_items and not need_log:
-            continue  # this order is fully done already, nothing left to do
+        # NOTE: no early "continue" here even when an existing order needs
+        # neither new items nor a log - its rows still get walked below so
+        # order_items.price_paid can be corrected (see the else branch).
 
         note_parts = []
         for r in rows:
@@ -301,6 +364,11 @@ def import_orders(wb, pb, article_id_by_number):
 
             size = ws.cell(row=r, column=col["Grösse"]).value or ""
             qty = ws.cell(row=r, column=col["Anzahl"]).value or 0
+            # The charged amount for this line - "Preis Total", forced to 0
+            # if isReturn is set. "Preis pro Artikel" (unit price) never
+            # factors in here - the fee deduction is applied once at the
+            # order level (above), not per line.
+            preis_total = line_charged_amount(ws, r, col)
 
             if create_items:
                 item_data = {
@@ -310,12 +378,29 @@ def import_orders(wb, pb, article_id_by_number):
                     "color": ws.cell(row=r, column=col["Farbe"]).value or "",
                     "quantity": qty,
                     "unit_price": ws.cell(row=r, column=col["Preis pro Artikel"]).value or 0,
-                    "price_paid": ws.cell(row=r, column=col["Tatsächlich eingegangen"]).value or 0,
+                    "price_paid": preis_total,
                     "is_return": bool(ws.cell(row=r, column=col["isReturn"]).value),
                     "return_category": "",
                 }
                 pb.create("order_items", item_data)
                 n_items += 1
+            else:
+                # Existing order - correct this line's price_paid if an
+                # earlier run stored the wrong value (the "Tatsächlich
+                # eingegangen was blank" bug).
+                existing_item = pb.find_one(
+                    "order_items",
+                    f'order = "{order_rec["id"]}" && article = "{article_id}" && size = "{size}"',
+                )
+                if existing_item:
+                    existing_price = existing_item.get("price_paid") or 0
+                    if abs(existing_price - preis_total) > 0.001:
+                        pb.update("order_items", existing_item["id"], {"price_paid": preis_total})
+                        n_items_corrected += 1
+                        print(
+                            f"    order_items: corrected price_paid for {oid} {article_number} "
+                            f"({size}): {existing_price} -> {preis_total}"
+                        )
 
             if need_log:
                 note_parts.append(f"{article_number} x{qty} ({size})")
@@ -335,7 +420,10 @@ def import_orders(wb, pb, article_id_by_number):
             })
             n_logs += 1
 
-    print(f"orders imported: {n_orders}, order_items imported: {n_items}, logs imported: {n_logs}")
+    print(
+        f"orders imported: {n_orders}, order_items imported: {n_items}, "
+        f"order_items price_paid corrected: {n_items_corrected}, logs imported: {n_logs}"
+    )
 
 
 def main():

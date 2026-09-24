@@ -326,6 +326,26 @@ function computeActualAmount(totalPrice) {
   return Math.max(0, Math.round(raw * 100) / 100);
 }
 
+// A line's "Preis pro Artikel" (unit price) never factors into what was
+// actually charged - only "Preis Total" does (and see lineChargedAmount
+// below for the isReturn override on top of that). It's stored on
+// order_items.unit_price purely as reference info.
+//
+// A row's "isReturn" checkbox always wins over whatever "Preis Total" says:
+// a return-promo item was given away free, so it charged CHF 0, even if the
+// sheet's "Preis Total" formula/cell wasn't actually updated to 0 for that
+// row.
+function lineChargedAmount(row, col) {
+  if (row[col["isReturn"]]) return 0;
+  return Number(row[col["Preis Total"]]) || 0;
+}
+
+// Only orders placed after this date get created/corrected by this run -
+// per request, to scope a fix to recently-affected orders rather than
+// touching the entire historical dataset. Bump/remove this for a future
+// full re-sync.
+const ORDER_CUTOFF = new Date("2026-07-12T00:00:00Z");
+
 async function importArticles(wb, pb) {
   const ws = wb.Sheets["Lagerbestand"];
   const rows = sheetRows(ws);
@@ -434,6 +454,7 @@ async function importOrders(wb, pb, articleIdByNumber) {
 
   let nOrders = 0;
   let nItems = 0;
+  let nItemsCorrected = 0;
   let nLogs = 0;
 
   for (const [oid, rowIndexes] of orders) {
@@ -446,11 +467,18 @@ async function importOrders(wb, pb, articleIdByNumber) {
     const timestampRaw = first[col["Timestamp"]];
     const placedAt = timestampRaw instanceof Date ? timestampRaw.toISOString() : "";
 
+    // Scope this run to recently-affected orders only (see ORDER_CUTOFF).
+    if (!(timestampRaw instanceof Date) || timestampRaw <= ORDER_CUTOFF) {
+      continue;
+    }
+
     // Don't trust "Tatsächlich eingegangen" / "Summe Pro Kunde" - they turned
-    // out to be unreliable. Derive the real total ourselves: sum "Preis
-    // Total" across all of this order's rows, then apply the payment fee
-    // once for the whole order.
-    const totalPrice = rowIndexes.reduce((sum, r) => sum + (Number(rows[r][col["Preis Total"]]) || 0), 0);
+    // out to be unreliable. Derive the real total ourselves: sum each row's
+    // lineChargedAmount (usually "Preis Total", but forced to 0 for a
+    // return-promo row) across all of this order's rows, then apply the
+    // payment fee once for the whole order. Never let "Preis pro Artikel"
+    // (unit price) influence this.
+    const totalPrice = rowIndexes.reduce((sum, r) => sum + lineChargedAmount(rows[r], col), 0);
     const actualAmount = computeActualAmount(totalPrice);
 
     const existingOrder = await pb.findOne("orders", `order_number = "${oid}"`);
@@ -506,9 +534,12 @@ async function importOrders(wb, pb, articleIdByNumber) {
       needLog = !alreadyLogged;
     }
 
-    if (!createItems && !needLog) {
-      continue; // this order is fully done already, nothing left to do
-    }
+    // NOTE: no early "continue" here even when an existing order needs
+    // neither new items nor a log - its rows still get walked below so
+    // order_items.price_paid can be corrected (see the else branch) if an
+    // earlier run of sync_legacy_xlsx.py/import_legacy_xlsx.py stored a
+    // wrong value from the (since-fixed) "Tatsächlich eingegangen was
+    // blank" bug.
 
     const noteParts = [];
     for (const r of rowIndexes) {
@@ -522,6 +553,11 @@ async function importOrders(wb, pb, articleIdByNumber) {
 
       const size = row[col["Grösse"]] || "";
       const qty = row[col["Anzahl"]] || 0;
+      // The charged amount for this line - "Preis Total", forced to 0 if
+      // isReturn is set (see lineChargedAmount). "Preis pro Artikel" (unit
+      // price) never factors in here - the fee deduction is applied once at
+      // the order level, not per line.
+      const preisTotal = lineChargedAmount(row, col);
 
       if (createItems) {
         const itemData = {
@@ -531,15 +567,28 @@ async function importOrders(wb, pb, articleIdByNumber) {
           color: row[col["Farbe"]] || "",
           quantity: qty,
           unit_price: row[col["Preis pro Artikel"]] || 0,
-          // "Preis Total" already reflects this line's actual charged
-          // amount (e.g. 0 or reduced for a return-promo item) - the fee
-          // deduction is applied once at the order level, not per line.
-          price_paid: row[col["Preis Total"]] || 0,
+          price_paid: preisTotal,
           is_return: !!row[col["isReturn"]],
           return_category: "",
         };
         await pb.create("order_items", itemData);
         nItems++;
+      } else {
+        // Existing order - correct this line's price_paid if an earlier
+        // run stored the wrong value.
+        const existingItem = await pb
+          .findOne("order_items", `order = "${orderRec.id}" && article = "${articleId}" && size = "${size}"`)
+          .catch(() => null);
+        if (existingItem) {
+          const existingPrice = Number(existingItem.price_paid) || 0;
+          if (Math.abs(existingPrice - preisTotal) > 0.001) {
+            console.log(
+              `    order_items: correcting price_paid for ${oid} ${articleNumber} (${size}): ${existingPrice} -> ${preisTotal}`,
+            );
+            await pb.update("order_items", existingItem.id, { price_paid: preisTotal });
+            nItemsCorrected++;
+          }
+        }
       }
 
       if (needLog) {
@@ -564,7 +613,10 @@ async function importOrders(wb, pb, articleIdByNumber) {
     }
   }
 
-  console.log(`orders imported: ${nOrders}, order_items imported: ${nItems}, logs imported: ${nLogs}`);
+  console.log(
+    `orders imported: ${nOrders}, order_items imported: ${nItems}, ` +
+      `order_items price_paid corrected: ${nItemsCorrected}, logs imported: ${nLogs}`,
+  );
 }
 
 async function main() {

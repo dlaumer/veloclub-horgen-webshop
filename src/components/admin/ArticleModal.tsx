@@ -649,12 +649,15 @@ export const ArticleModal = ({
                 />
               </Field>
               <Field label={t("adminSortOrder")}>
-                <Input
-                  type="number"
-                  value={form.sort_order}
-                  onChange={(e) => updateField("sort_order", Number(e.target.value))}
-                  onFocus={(e) => e.target.select()}
-                />
+                {/* No longer hand-typed - a manually chosen integer here is
+                    exactly what caused two products to collide on the same
+                    number. Position is now only changed via the up/down
+                    arrows on the article list (shown when no search/filter
+                    is active, since sort_order ranks the WHOLE catalog) -
+                    see ArticlesPanel's reorderMode / AdminDashboard's
+                    handleMoveProduct. */}
+                <Input type="number" value={form.sort_order} disabled />
+                <span className="text-[11px] text-[hsl(220_13%_55%)]">{t("adminSortOrderHint")}</span>
               </Field>
             </div>
             <label className="flex items-center gap-2 text-[13.5px]">

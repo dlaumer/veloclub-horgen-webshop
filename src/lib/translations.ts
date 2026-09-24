@@ -344,7 +344,10 @@ export const translations = {
   adminLogTitle: { en: "Log", de: "Log" },
   adminArticlesTitle: { en: "Stock", de: "Bestand" },
   adminStatOrders: { en: "# Orders", de: "# Bestellungen" },
-  adminStatRevenue: { en: "Revenue", de: "Summe" },
+  adminStatRevenue: { en: "Paid by customer", de: "Bezahlt von Kunden" },
+  adminStatReceived: { en: "Received", de: "Erhalten" },
+  adminStatCostPrice: { en: "Cost price", de: "Einkaufspreis" },
+  adminStatCostPricePaid: { en: "Cost price (paid items)", de: "Einkaufspreis (bezahlte Artikel)" },
   adminStatNotCollected: { en: "Not collected", de: "Nicht abgeholt" },
   adminStatTrend: { en: "Trend", de: "Verlauf" },
   adminRangeToday: { en: "Today", de: "Heute" },
@@ -366,6 +369,8 @@ export const translations = {
   adminOrderNumber: { en: "Order number", de: "Bestellnummer" },
   adminEmail: { en: "Email", de: "E-Mail" },
   adminPaymentStatus: { en: "Payment status", de: "Zahlungsstatus" },
+  adminPricePaid: { en: "Price paid", de: "Bezahlter Preis" },
+  adminMoneyReceived: { en: "Money received", de: "Erhaltener Betrag" },
   adminCustomerNote: { en: "Customer note", de: "Bemerkung Kunde" },
   adminInternalNote: { en: "Internal note", de: "Interne Notiz" },
   adminInternalNotePlaceholder: {
@@ -504,5 +509,18 @@ export const translations = {
   adminPromoCodeSaveError: {
     en: "Save failed. Make sure the code is unique and try again.",
     de: "Speichern fehlgeschlagen. Stelle sicher, dass der Code eindeutig ist, und versuche es erneut.",
+  },
+  adminReorderHint: {
+    en: "Use the arrows to reorder how products appear in the shop.",
+    de: "Mit den Pfeilen kannst du die Reihenfolge der Produkte im Shop ändern.",
+  },
+  adminReorderUnavailable: {
+    en: "Reordering is only available with no search and \"All\" category selected.",
+    de: "Umsortieren ist nur ohne Suche und mit ausgewählter Kategorie \"Alle\" möglich.",
+  },
+  adminColorsCount: { en: "colors", de: "Farben" },
+  adminSortOrderHint: {
+    en: "Use the arrows in the article list to change this (see \"All\" category, no search)",
+    de: "Über die Pfeile in der Artikelliste änderbar (Kategorie \"Alle\", ohne Suche)",
   },
 };

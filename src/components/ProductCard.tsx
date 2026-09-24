@@ -24,10 +24,15 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
         <img
           src={assetUrl(product.image) || assetUrl('/placeholder.png')}
           alt={product.name}
-          className="w-full h-full object-contain"
+          className={`w-full h-full object-contain ${isSoldOut ? "opacity-40 grayscale" : ""}`}
         />
+        {isSoldOut && (
+          <span className="absolute top-2 left-2 bg-foreground/85 text-background text-[11px] font-semibold uppercase tracking-wide px-2 py-1 rounded">
+            {t("soldOut")}
+          </span>
+        )}
       </div>
-      
+
       <h3 className="font-medium text-product-card-foreground mb-2 text-sm">
         {product.name}
       </h3>

@@ -268,6 +268,24 @@ export const OrderModal = ({
             <div>{order.payment_status}</div>
           </div>
           <div>
+            <div className="text-[hsl(220_13%_55%)] text-[11.5px] mb-0.5">{t("adminPricePaid")}</div>
+            <div>{fmtMoney(order.pricePaid)}</div>
+          </div>
+          <div>
+            <div className="text-[hsl(220_13%_55%)] text-[11.5px] mb-0.5">{t("adminMoneyReceived")}</div>
+            <div>{fmtMoney(order.moneyReceived)}</div>
+          </div>
+          <div>
+            <div className="text-[hsl(220_13%_55%)] text-[11.5px] mb-0.5">{t("adminCostPrice")}</div>
+            <div>{fmtMoney(order.costPriceTotal)}</div>
+          </div>
+          {order.costPricePaidTotal !== order.costPriceTotal && (
+            <div>
+              <div className="text-[hsl(220_13%_55%)] text-[11.5px] mb-0.5">{t("adminStatCostPricePaid")}</div>
+              <div>{fmtMoney(order.costPricePaidTotal)}</div>
+            </div>
+          )}
+          <div>
             <div className="text-[hsl(220_13%_55%)] text-[11.5px] mb-0.5">{t("adminKidzbike")}</div>
             <span className={kidzbike.className}>{kidzbike.label}</span>
           </div>
@@ -328,7 +346,7 @@ export const OrderModal = ({
 
         <div className="flex justify-between items-center py-3 px-1 border-t border-[hsl(220_13%_90%)]">
           <span className="text-sm font-semibold">{t("adminTotal")}</span>
-          <span className="text-lg font-bold">{fmtMoney(order.amount_paid)}</span>
+          <span className="text-lg font-bold">{fmtMoney(order.pricePaid)}</span>
         </div>
       </DialogContent>
     </Dialog>

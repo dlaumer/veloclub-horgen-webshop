@@ -9,6 +9,10 @@ export interface EnrichedOrderItem {
   quantity: number;
   unitPrice: number;
   pricePaid: number;
+  // quantity * the article's cost_price - what this line actually cost the
+  // club to buy in, for the cost-price total shown on the order (see
+  // AdminDashboard.tsx's enrichedOrders / OrderModal.tsx).
+  costPrice: number;
   image: string;
   isReturn: boolean;
 }
@@ -34,6 +38,30 @@ export interface EnrichedOrder extends OrderRecord {
   // a "currently cancelled" check to avoid a stale value.
   cancelledAt?: string;
   cancelledBy?: string;
+  // The gross price the CUSTOMER paid. For "zahls"/"free" orders this is
+  // just amount_paid (that field already holds the real charged amount -
+  // see finalizeOrder in lib_zahls.js). For payment_provider === "legacy"
+  // orders it is NOT amount_paid - the old Excel-import script
+  // (backend/scripts/import_legacy_xlsx.mjs, computeActualAmount) already
+  // stores amount_paid net of the estimated Zahls fee for those, so the
+  // gross price has to be reconstructed from the order's items instead (sum
+  // of items[].pricePaid, which mirrors the sheet's "Preis Total" column).
+  // See moneyReceived below for the matching "amount actually kept" value.
+  pricePaid: number;
+  // What the club actually kept after Zahls/Payrexx's fee. For "legacy"
+  // orders this IS amount_paid (already net, see pricePaid above) - for
+  // everything else it's amount_paid minus the real or estimated provider
+  // fee (see computeMoneyReceived in adminApi.ts). costPriceTotal is the
+  // total cost_price of every item in the order (sum of items[].costPrice).
+  // These three, plus pricePaid, are shown in OrderModal.tsx and summed in
+  // AdminDashboard.tsx's stats.
+  moneyReceived: number;
+  costPriceTotal: number;
+  // Same as costPriceTotal but excluding items[].isReturn lines (items given
+  // away free/discounted via a "return_category" promo - see isReturn on
+  // EnrichedOrderItem) - the cost of goods that actually generated revenue,
+  // as opposed to goods given away as a promotion.
+  costPricePaidTotal: number;
 }
 
 export interface ArticleSize {

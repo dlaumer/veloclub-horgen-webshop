@@ -223,7 +223,41 @@ export type OrderRecord = {
   internal_note: string;
   placed_at: string;
   created: string;
+  // The real fee Zahls/Payrexx charged for this transaction, in CHF - from
+  // the payment webhook (tx.fee, see 1783909000_orders_provider_fee.js).
+  // 0 for orders placed before this field existed, and for free/promo
+  // orders (which never had a fee taken in the first place) - see
+  // estimateProviderFee/computeMoneyReceived below for how the UI tells
+  // those two "0" cases apart.
+  provider_fee: number;
 };
+
+// Zahls/Payrexx charges CHF 0.30 + 2.9% per transaction - this is also
+// exactly the estimate calcPriceFromCost (ArticleModal.tsx) bakes into the
+// selling price. Confirmed against a real webhook payload: CHF 78.00 ->
+// CHF 2.56 fee actually taken, and 78 * 0.029 + 0.30 = 2.562, matching to
+// the cent. Used as a fallback for orders placed before orders.provider_fee
+// existed (which is 0 for those, same as a genuinely fee-free order) - real
+// orders always prefer the actual provider_fee once available.
+const PAYMENT_FIXED_FEE = 0.3;
+const PAYMENT_PERCENT_FEE = 0.029;
+
+export function estimateProviderFee(amountPaid: number): number {
+  if (!amountPaid) return 0;
+  return amountPaid * PAYMENT_PERCENT_FEE + PAYMENT_FIXED_FEE;
+}
+
+/** What the club actually kept after Zahls/Payrexx's cut - amount_paid
+ * minus the real fee (order.provider_fee) when we have one, otherwise the
+ * 2.9% + CHF 0.30 estimate. Orders with no real payment (free/promo,
+ * payment_provider !== "zahls") never had a fee taken at all. */
+export function computeMoneyReceived(
+  order: Pick<OrderRecord, "payment_provider" | "amount_paid" | "provider_fee">,
+): number {
+  if (order.payment_provider !== "zahls" || !order.amount_paid) return order.amount_paid || 0;
+  const fee = order.provider_fee > 0 ? order.provider_fee : estimateProviderFee(order.amount_paid);
+  return order.amount_paid - fee;
+}
 
 export type OrderItemRecord = {
   id: string;
@@ -242,6 +276,7 @@ export type OrderItemRecord = {
       name: string;
       color_name: string;
       images?: string[];
+      cost_price: number;
     };
   };
 };
@@ -426,6 +461,36 @@ export async function updateArticle(
  */
 export async function deleteArticle(token: string, id: string): Promise<void> {
   await pbFetch<unknown>(`/api/collections/articles/records/${id}`, token, { method: "DELETE" });
+}
+
+/**
+ * Raw articles list (every color-variant record, real PocketBase id
+ * included) sorted by sort_order - used only by the product-reorder
+ * feature in AdminDashboard/ArticlesPanel, which needs the actual record
+ * ids to PATCH (unlike EnrichedArticle, which is built from the public
+ * /api/stock shape and only carries the storefront sku as "id").
+ */
+export async function listAllArticles(token: string): Promise<ArticleRecord[]> {
+  const json = await pbFetch<{ items: ArticleRecord[] }>(
+    `/api/collections/articles/records?sort=sort_order&perPage=500`,
+    token,
+  );
+  return json.items;
+}
+
+/**
+ * Applies a batch of sort_order changes (one PATCH per changed record).
+ * Used by the product up/down reorder controls - see the big comment on
+ * "reorderMode" in AdminDashboard.tsx for why this always renumbers the
+ * whole visible product list rather than shuffling single values: it's
+ * what self-heals any pre-existing duplicate/gap sort_order values instead
+ * of just working around them.
+ */
+export async function setArticleSortOrders(
+  token: string,
+  updates: Array<{ id: string; sort_order: number }>,
+): Promise<void> {
+  await Promise.all(updates.map((u) => updateArticle(token, u.id, { sort_order: u.sort_order })));
 }
 
 /**

@@ -463,6 +463,12 @@ routerAdd("POST", "/api/webhook", (e) => {
         paymentProvider: "zahls",
         paymentStatus: String(tx.status || ""),
         amountCents: Number(tx.amount || 0),
+        // Zahls is set up as a Payrexx "platform" merchant, which uses the
+        // key "fee" instead of the ordinary "payrexxFee" - confirmed from a
+        // live webhook payload. Checking both (and avoiding "??", which
+        // PocketBase's JS runtime doesn't support) keeps this working if
+        // that ever changes (see 1783909000_orders_provider_fee.js).
+        providerFeeCents: Number(tx.fee !== undefined ? tx.fee : tx.payrexxFee !== undefined ? tx.payrexxFee : 0),
         currency: (tx.invoice && tx.invoice.currency) || "CHF",
         // tx.id (numeric) preferred over tx.uuid on purpose - Zahls/Payrexx's
         // refund/retrieve-transaction endpoints take the numeric id, not the

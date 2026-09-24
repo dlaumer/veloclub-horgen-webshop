@@ -10,8 +10,11 @@ import {
   updateOrder,
   cancelOrder,
   parseTriState,
+  computeMoneyReceived,
   AuthExpiredError,
   articleFileUrl,
+  listAllArticles,
+  setArticleSortOrders,
 } from "@/lib/adminApi";
 import { fetchStock } from "@/lib/stockApi";
 import { inRange, RangeMode } from "@/lib/adminFormat";
@@ -70,6 +73,15 @@ const AdminDashboard = () => {
   const stockQuery = useQuery({
     queryKey: ["admin-stock"],
     queryFn: () => fetchStock(),
+    refetchInterval: 30000,
+  });
+  // Raw articles (real record ids + sort_order), used only by the product
+  // reorder controls below - EnrichedArticle (built from the public
+  // /api/stock shape) doesn't carry the actual PocketBase record id needed
+  // to PATCH sort_order.
+  const rawArticlesQuery = useQuery({
+    queryKey: ["admin-articles-raw"],
+    queryFn: () => listAllArticles(token),
     refetchInterval: 30000,
   });
 
@@ -154,6 +166,7 @@ const AdminDashboard = () => {
         quantity: it.quantity,
         unitPrice: it.unit_price,
         pricePaid: it.price_paid,
+        costPrice: (it.expand?.article?.cost_price || 0) * it.quantity,
         image:
           it.expand?.article?.id && it.expand.article.images?.[0]
             ? articleFileUrl(it.expand.article.id, it.expand.article.images[0])
@@ -161,6 +174,16 @@ const AdminDashboard = () => {
         isReturn: !!it.is_return,
       }));
       const itemCount = items.reduce((s, it) => s + it.quantity, 0);
+      const costPriceTotal = items.reduce((s, it) => s + it.costPrice, 0);
+      const costPricePaidTotal = items.reduce((s, it) => s + (it.isReturn ? 0 : it.costPrice), 0);
+      // Legacy-imported orders (payment_provider === "legacy") don't follow
+      // the same amount_paid convention as real Zahls/free orders - see the
+      // pricePaid/moneyReceived comments on EnrichedOrder (types/admin.ts)
+      // for why. Gross price for those has to come from the items, not
+      // amount_paid; amount_paid there is already the net received amount.
+      const isLegacyOrder = o.payment_provider === "legacy";
+      const pricePaid = isLegacyOrder ? items.reduce((s, it) => s + it.pricePaid, 0) : o.amount_paid || 0;
+      const moneyReceived = isLegacyOrder ? o.amount_paid || 0 : computeMoneyReceived(o);
       // Only surface the derived ready/picked-up timestamp while the order
       // is CURRENTLY in that state - the underlying log entries stick
       // around after an undo (see the comment above eventTimesByOrder), so
@@ -173,6 +196,10 @@ const AdminDashboard = () => {
         fullName: `${o.buyer_name} ${o.buyer_lastname}`.trim(),
         itemCount,
         items,
+        costPriceTotal,
+        costPricePaidTotal,
+        pricePaid,
+        moneyReceived,
         readyAt: isReady ? eventTimesByOrder[o.id]?.readyAt : undefined,
         readyBy: isReady ? eventTimesByOrder[o.id]?.readyBy : undefined,
         pickedAt: isPicked ? eventTimesByOrder[o.id]?.pickedAt : undefined,
@@ -219,9 +246,13 @@ const AdminDashboard = () => {
   );
 
   const stats = useMemo(() => {
-    const revenue = filteredOrders.filter((o) => !o.cancelled).reduce((s, o) => s + (o.amount_paid || 0), 0);
+    const notCancelled = filteredOrders.filter((o) => !o.cancelled);
+    const revenue = notCancelled.reduce((s, o) => s + (o.pricePaid || 0), 0);
+    const received = notCancelled.reduce((s, o) => s + (o.moneyReceived || 0), 0);
+    const costPrice = notCancelled.reduce((s, o) => s + (o.costPriceTotal || 0), 0);
+    const costPricePaid = notCancelled.reduce((s, o) => s + (o.costPricePaidTotal || 0), 0);
     const notCollected = filteredOrders.filter((o) => !o.cancelled && parseTriState(o.picked_up) === false).length;
-    return { count: filteredOrders.length, revenue, notCollected };
+    return { count: filteredOrders.length, revenue, received, costPrice, costPricePaid, notCollected };
   }, [filteredOrders]);
 
   const enrichedLogs: EnrichedLog[] = useMemo(() => {
@@ -347,6 +378,76 @@ const AdminDashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [enrichedArticles, articleCategory, searchLower],
   );
+
+  // Product reordering (see the big comment on ArticlesPanel's
+  // "reorderMode" prop) is only offered on the complete, unfiltered
+  // article list - sort_order is a single global ranking across every
+  // product, so reordering within a filtered/searched subset would put
+  // products back in the exact "duplicate/unclear number" mess this
+  // feature exists to fix.
+  const reorderMode = articleCategory === "all" && searchLower === "";
+
+  // Current product display order, derived from `stock` (which /api/stock
+  // already returns pre-sorted by sort_order) rather than recomputed here -
+  // dedupe preserves that order since a product's color variants are
+  // always consecutive in enrichedArticles.
+  const productOrderIds = useMemo(() => {
+    const seen = new Set<string>();
+    const ids: string[] = [];
+    for (const a of enrichedArticles) {
+      if (seen.has(a.productId)) continue;
+      seen.add(a.productId);
+      ids.push(a.productId);
+    }
+    return ids;
+  }, [enrichedArticles]);
+
+  // Every raw article record (one per color variant), grouped by the
+  // product they belong to - needed so a product move can PATCH sort_order
+  // onto ALL of that product's color variants, not just one.
+  const articleIdsByProduct = useMemo(() => {
+    const map: Record<string, Array<{ id: string; sort_order: number }>> = {};
+    for (const a of rawArticlesQuery.data || []) {
+      if (!map[a.product_id]) map[a.product_id] = [];
+      map[a.product_id].push({ id: a.id, sort_order: a.sort_order });
+    }
+    return map;
+  }, [rawArticlesQuery.data]);
+
+  const [movingProductId, setMovingProductId] = useState<string | null>(null);
+
+  const moveProductMutation = useMutation({
+    mutationFn: async (nextOrder: string[]) => {
+      // Renumber the WHOLE list to a clean 0..N-1 sequence and only write
+      // the records whose sort_order actually changed - this is what
+      // self-heals any pre-existing duplicate/gap values instead of just
+      // working around them (see setArticleSortOrders's comment).
+      const updates: Array<{ id: string; sort_order: number }> = [];
+      nextOrder.forEach((pid, idx) => {
+        for (const item of articleIdsByProduct[pid] || []) {
+          if (item.sort_order !== idx) updates.push({ id: item.id, sort_order: idx });
+        }
+      });
+      await setArticleSortOrders(token, updates);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-articles-raw"] });
+    },
+    onError: () => toast({ variant: "destructive", description: t("adminActionError") }),
+    onSettled: () => setMovingProductId(null),
+  });
+
+  const handleMoveProduct = (productId: string, direction: -1 | 1) => {
+    if (moveProductMutation.isPending) return;
+    const idx = productOrderIds.indexOf(productId);
+    const targetIdx = idx + direction;
+    if (idx < 0 || targetIdx < 0 || targetIdx >= productOrderIds.length) return;
+    const next = [...productOrderIds];
+    [next[idx], next[targetIdx]] = [next[targetIdx], next[idx]];
+    setMovingProductId(productId);
+    moveProductMutation.mutate(next);
+  };
 
   const selectedOrder = selectedOrderId ? ordersById[selectedOrderId] || null : null;
   const selectedArticle = selectedArticleId
@@ -560,6 +661,9 @@ const AdminDashboard = () => {
             activeCategory={articleCategory}
             onCategoryChange={setArticleCategory}
             onSelectArticle={setSelectedArticleId}
+            reorderMode={reorderMode}
+            onMoveProduct={handleMoveProduct}
+            movingProductId={movingProductId}
           />
         </div>
       </div>
