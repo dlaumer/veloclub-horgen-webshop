@@ -235,6 +235,80 @@ class PocketBase {
     }
     return deleted;
   }
+
+  /** Uploads `files` into an article's "images" field in one request - all
+   * of them together, not one PATCH per file (PocketBase sets a file
+   * field fresh per request rather than accumulating across separate
+   * requests, so uploading one at a time would just overwrite the
+   * previous image each time). */
+  async uploadArticleImages(articleId, files) {
+    const form = new FormData();
+    for (const f of files) form.append("images", f.blob, f.filename);
+    const res = await fetchWithTimeout(
+      `${this.baseUrl}/api/collections/articles/records/${articleId}`,
+      { method: "PATCH", headers: this.headers(), body: form },
+      120000
+    );
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error(`HTTP ${res.status} ${text}`);
+    }
+    return res.json();
+  }
+}
+
+function extensionFromContentType(ct) {
+  if (!ct) return ".jpg";
+  if (ct.includes("png")) return ".png";
+  if (ct.includes("webp")) return ".webp";
+  if (ct.includes("gif")) return ".gif";
+  if (ct.includes("avif")) return ".avif";
+  return ".jpg";
+}
+
+function filenameFromUrl(url, index, contentType) {
+  let base = "";
+  try {
+    base = decodeURIComponent(new URL(url).pathname.split("/").pop() || "");
+  } catch {
+    /* ignore - fall through to generated name */
+  }
+  base = base.replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (!base) base = `image_${index}`;
+  if (!/\.[a-zA-Z0-9]+$/.test(base)) base += extensionFromContentType(contentType);
+  return base;
+}
+
+async function downloadImage(url) {
+  const res = await fetchWithTimeout(url, {}, 30000);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const contentType = res.headers.get("content-type") || "";
+  if (!contentType.startsWith("image/")) {
+    throw new Error(`not an image (content-type: ${contentType || "unknown"})`);
+  }
+  const buf = await res.arrayBuffer();
+  return { buf, contentType };
+}
+
+/** Downloads `urls` and uploads whatever succeeds into the article's
+ * "images" field, in order. Used both for brand-new articles and to
+ * backfill existing ones that don't have any uploaded images yet. */
+async function uploadArticleImagesFromUrls(pb, articleId, articleNumber, urls) {
+  const files = [];
+  for (let i = 0; i < urls.length; i++) {
+    try {
+      const { buf, contentType } = await downloadImage(urls[i]);
+      files.push({
+        blob: new Blob([buf], { type: contentType || "image/jpeg" }),
+        filename: filenameFromUrl(urls[i], i, contentType),
+      });
+    } catch (err) {
+      console.log(`    WARNING: ${articleNumber} image ${i} (${urls[i]}) failed to download: ${err.message || err}`);
+    }
+  }
+  if (!files.length) return 0;
+  await pb.uploadArticleImages(articleId, files);
+  return files.length;
 }
 
 // Payment gateway fee model used to derive the amount actually received per
@@ -261,6 +335,7 @@ async function importArticles(wb, pb) {
   const articleIdByNumber = {};
   let nArticles = 0;
   let nItems = 0;
+  let nImages = 0;
 
   for (let r = 5; r < rows.length; r++) {
     const row = rows[r];
@@ -288,7 +363,6 @@ async function importArticles(wb, pb) {
         category: row[col["Kategorie"]] || "",
         color_name: row[col["Artikel"]] || "",
         color_code: row[col["Farbe"]] || "",
-        image_urls: parseImageUrls(row[col["URL Artikelbild"]]),
         embed_3d: row[col["3D Bild"]] || "",
         just_stock: row[col["JustStock"]] || "no",
         return_category: row[col["Rückgabe"]] || "no",
@@ -303,6 +377,22 @@ async function importArticles(wb, pb) {
     }
 
     articleIdByNumber[articleNumber] = rec.id;
+
+    // articles.images is a real uploaded-file field (no more image_urls) -
+    // download the sheet's image URLs and upload them directly. Only for
+    // articles that don't already have images (covers both "just created"
+    // and "existing but never got its images" on a re-run).
+    const hasImages = Array.isArray(rec.images) && rec.images.length > 0;
+    if (!hasImages) {
+      const imageUrls = parseImageUrls(row[col["URL Artikelbild"]]);
+      if (imageUrls.length) {
+        const uploaded = await uploadArticleImagesFromUrls(pb, rec.id, articleNumber, imageUrls);
+        if (uploaded) {
+          console.log(`    images: uploaded ${uploaded}/${imageUrls.length} for ${articleNumber}`);
+          nImages += uploaded;
+        }
+      }
+    }
 
     for (const sizeName of SIZE_COLUMNS) {
       if (!(sizeName in col)) continue;
@@ -322,7 +412,7 @@ async function importArticles(wb, pb) {
     }
   }
 
-  console.log(`articles imported: ${nArticles}, article_items imported: ${nItems}`);
+  console.log(`articles imported: ${nArticles}, article_items imported: ${nItems}, images uploaded: ${nImages}`);
   return articleIdByNumber;
 }
 

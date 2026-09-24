@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { CartItem, Product } from "@/types/shop";
 import { cn } from "@/lib/utils";
 import { useTranslation } from "@/hooks/useTranslation";
+import { assetUrl } from "@/lib/assetUrl";
 
 interface ProductModalProps {
   product: Product | null;
@@ -69,10 +70,14 @@ export const ProductModal = ({ product, isOpen, cartItems, onClose, onAddToCart 
     }
   }
 
-  const placeholderImage = "/placeholder.png";
+  const placeholderImage = assetUrl("/placeholder.png");
   if (regularImages.length === 0 && product.image) {
     regularImages = [product.image];
   }
+  // Resolve once here so the gallery render below AND the image stored
+  // into the cart (via handleAddToCart) both get a working URL.
+  regularImages = regularImages.map((img) => assetUrl(img));
+  const resolvedProductImage = assetUrl(product.image);
 
   const image3dValue = selectedColorData?.image3d;
   const has3dEmbed = image3dValue && typeof image3dValue === "string" && image3dValue.trim() !== "";
@@ -86,7 +91,7 @@ export const ProductModal = ({ product, isOpen, cartItems, onClose, onAddToCart 
   });
 
   if (galleryItems.length === 0) {
-    galleryItems.push({ type: "image", content: product.image || placeholderImage });
+    galleryItems.push({ type: "image", content: resolvedProductImage || placeholderImage });
   }
 
   const currentGalleryItem = galleryItems[currentImageIndex] || galleryItems[0];
@@ -94,7 +99,7 @@ export const ProductModal = ({ product, isOpen, cartItems, onClose, onAddToCart 
 
   const handleAddToCart = () => {
     if (selectedSize && selectedColor && selectedColorData) {
-      const cartImage = regularImages[0] || product.image;
+      const cartImage = regularImages[0] || resolvedProductImage;
       onAddToCart(product.id, selectedSize, selectedColor, selectedColorData.id, quantity, cartImage);
       onClose();
     }

@@ -11,6 +11,10 @@ const DOT_COLORS: Record<EnrichedLog["kind"], string> = {
   ready: "hsl(35 80% 50%)",
   pickup: "hsl(150 45% 40%)",
   cancel: "hsl(0 74% 50%)",
+  // corrections - same neutral gray for both, visually distinct from the
+  // "real" ready/pickup events they're undoing.
+  ready_undo: "hsl(220 13% 55%)",
+  pickup_undo: "hsl(220 13% 55%)",
 };
 
 interface LogPanelProps {
@@ -29,9 +33,19 @@ export const LogPanel = ({ logs, onSelectOrder, activeKind, onKindChange }: LogP
     ready: t("adminKindReady"),
     pickup: t("adminKindPickup"),
     cancel: t("adminKindCancel"),
+    ready_undo: t("adminKindReadyUndo"),
+    pickup_undo: t("adminKindPickupUndo"),
   };
 
-  const kindFilters: LogKindFilter[] = ["all", "purchase", "ready", "pickup", "cancel"];
+  const kindFilters: LogKindFilter[] = [
+    "all",
+    "purchase",
+    "ready",
+    "pickup",
+    "cancel",
+    "ready_undo",
+    "pickup_undo",
+  ];
 
   const visible = logs.slice(0, 40);
 
@@ -72,7 +86,15 @@ export const LogPanel = ({ logs, onSelectOrder, activeKind, onKindChange }: LogP
               <span className="hidden sm:inline">{" · "}</span>
               <span className="text-[hsl(220_13%_40%)]">{log.fullName}</span>
               {" · "}
-              <span className="text-[hsl(220_13%_55%)]">{fmtDateTime(log.placedAt, language)}</span>
+              <span className={cn("text-[hsl(220_13%_55%)]", !log.placedAt && "italic")}>
+                {log.placedAt ? fmtDateTime(log.placedAt, language) : t("adminNoDateInfo")}
+              </span>
+              {log.admin_name && (
+                <>
+                  {" · "}
+                  <span className="hidden sm:inline text-[hsl(220_13%_55%)]">{log.admin_name}</span>
+                </>
+              )}
             </span>
           </div>
         ))}

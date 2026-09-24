@@ -1,5 +1,5 @@
-import React, { createContext, useContext, useState, ReactNode, useCallback } from "react";
-import { AdminAuth, adminLogin, loadStoredAdminAuth, storeAdminAuth } from "@/lib/adminApi";
+import React, { createContext, useContext, useState, ReactNode, useCallback, useEffect } from "react";
+import { AdminAuth, adminLogin, loadStoredAdminAuth, storeAdminAuth, AUTH_EXPIRED_EVENT } from "@/lib/adminApi";
 
 interface AdminAuthContextType {
   auth: AdminAuth | null;
@@ -22,6 +22,17 @@ export const AdminAuthProvider = ({ children }: { children: ReactNode }) => {
   const logout = useCallback(() => {
     storeAdminAuth(null);
     setAuth(null);
+  }, []);
+
+  // adminApi's pbFetch() dispatches this when a request comes back 401/403,
+  // or when loadStoredAdminAuth() finds an already-expired token on load.
+  // It already cleared localStorage - this just syncs the React state so
+  // RequireAdminAuth immediately redirects to /admin/login instead of the
+  // dashboard sitting there showing stale/empty data forever.
+  useEffect(() => {
+    const handleExpired = () => setAuth(null);
+    window.addEventListener(AUTH_EXPIRED_EVENT, handleExpired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleExpired);
   }, []);
 
   return (

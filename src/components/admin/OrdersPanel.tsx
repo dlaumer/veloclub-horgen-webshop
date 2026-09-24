@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Calendar } from "lucide-react";
+import { Calendar, StickyNote } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { fmtDateTime, fmtMoney, RangeMode } from "@/lib/adminFormat";
@@ -47,6 +47,10 @@ export const OrdersPanel = ({
     cancelled: t("adminBadgeCancelled"),
     na: t("adminNA"),
   };
+  // ready/picked-up never show a bare "Ja"/"Nein" - always spell out what
+  // that actually means.
+  const readyI18n = { ...badgeI18n, yes: t("adminMarkReady"), no: t("adminNotReady") };
+  const pickedI18n = { ...badgeI18n, yes: t("adminMarkPickedUp"), no: t("adminNotPickedUp") };
 
   const hasCustomRange = rangeMode === "custom" && (!!customFrom || !!customTo);
   const presetBtn = (active: boolean) =>
@@ -156,10 +160,10 @@ export const OrdersPanel = ({
         </div>
 
         {orders.map((order) => {
-          const ready = readyBadge(order.ready, order.cancelled, badgeI18n);
-          const picked = pickedBadge(order.picked_up, badgeI18n);
-          const readyIc = readyIcon(order.ready, order.cancelled, badgeI18n);
-          const pickedIc = pickedIcon(order.picked_up, badgeI18n);
+          const ready = readyBadge(order.ready, order.cancelled, readyI18n);
+          const picked = pickedBadge(order.picked_up, pickedI18n);
+          const readyIc = readyIcon(order.ready, order.cancelled, readyI18n);
+          const pickedIc = pickedIcon(order.picked_up, pickedI18n);
           return (
             <div
               key={order.id}
@@ -173,8 +177,19 @@ export const OrdersPanel = ({
                   order.cancelled && "line-through text-[hsl(220_13%_65%)]",
                 )}
               >
-                <span className="text-[13.5px] font-medium overflow-hidden text-ellipsis whitespace-nowrap">
-                  {order.fullName}
+                <span className="flex items-center gap-1.5 min-w-0">
+                  <span className="text-[13.5px] font-medium overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
+                    {order.fullName}
+                  </span>
+                  {order.internal_note && (
+                    <span
+                      title={order.internal_note}
+                      className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9.5px] font-semibold bg-[hsl(35_90%_92%)] text-[hsl(35_80%_35%)]"
+                    >
+                      <StickyNote size={9} className="shrink-0" />
+                      {t("adminInternalNote")}
+                    </span>
+                  )}
                 </span>
                 <span className="text-[10.5px] text-[hsl(220_13%_50%)] overflow-hidden text-ellipsis whitespace-nowrap">
                   {fmtDateTime(order.placed_at || order.created, language)}
@@ -199,11 +214,22 @@ export const OrdersPanel = ({
               {/* Desktop: name */}
               <span
                 className={cn(
-                  "hidden sm:block text-[14.5px] font-medium overflow-hidden text-ellipsis whitespace-nowrap min-w-0",
+                  "hidden sm:flex items-center gap-1.5 min-w-0",
                   order.cancelled && "line-through text-[hsl(220_13%_65%)]",
                 )}
               >
-                {order.fullName}
+                <span className="text-[14.5px] font-medium overflow-hidden text-ellipsis whitespace-nowrap min-w-0">
+                  {order.fullName}
+                </span>
+                {order.internal_note && (
+                  <span
+                    title={order.internal_note}
+                    className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-semibold bg-[hsl(35_90%_92%)] text-[hsl(35_80%_35%)]"
+                  >
+                    <StickyNote size={10} className="shrink-0" />
+                    {t("adminInternalNote")}
+                  </span>
+                )}
               </span>
               <span
                 className={cn(

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { CartItem } from "@/types/shop";
 import { useTranslation } from "@/hooks/useTranslation";
 import { LanguageSelector } from "@/components/LanguageSelector";
-import { calculateCartTotals } from "@/lib/returnDiscount";
+import { computeCartPricing, ResolvedPromo } from "@/lib/promoPricing";
 import { FormEvent, useState } from "react";
 
 interface ShoppingCartProps {
@@ -15,7 +15,8 @@ interface ShoppingCartProps {
   onCheckout: () => void;
   onApplyPromoCode: (code: string) => void;
   onClearPromoCode: () => void;
-  isReturnPromoApplied: boolean;
+  promo: ResolvedPromo;
+  validatingPromo?: boolean;
   isPaying?: boolean;
 }
 
@@ -27,13 +28,15 @@ export const ShoppingCart = ({
   onCheckout,
   onApplyPromoCode,
   onClearPromoCode,
-  isReturnPromoApplied,
+  promo,
+  validatingPromo = false,
   isPaying = false,
 }: ShoppingCartProps) => {
   const { t } = useTranslation();
   const [promoCode, setPromoCode] = useState("");
   const totalItems = items.reduce((sum, item) => sum + item.quantity, 0);
-  const { discountedItems, returnDiscount, total } = calculateCartTotals(items, isReturnPromoApplied);
+  const { lines: discountedItems, discount, total } = computeCartPricing(items, promo);
+  const isPromoApplied = !!promo;
 
   const handlePromoSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -110,13 +113,13 @@ export const ShoppingCart = ({
                         <p className="text-xs text-muted-foreground">
                           {t('amount')}: {item.quantity}
                         </p>
-                        {item.isFreeByReturnPromo && (
+                        {item.isReturn && promo?.type === "return_category" && (
                           <p className="text-xs text-green-600 font-medium">
                             {t('freeItem')}
                           </p>
                         )}
                         <p className="font-semibold text-sm mt-1">
-                          CHF {(item.price * item.quantity).toFixed(2)}
+                          CHF {item.lineTotal.toFixed(2)}
                         </p>
                       </div>
                       <button
@@ -139,23 +142,30 @@ export const ShoppingCart = ({
                     value={promoCode}
                     onChange={(event) => setPromoCode(event.target.value)}
                     placeholder={t('promoCode')}
-                    disabled={isPaying || isReturnPromoApplied}
+                    disabled={isPaying || isPromoApplied || validatingPromo}
                     className="h-10"
                   />
-                  {isReturnPromoApplied ? (
+                  {isPromoApplied ? (
                     <Button type="button" variant="outline" onClick={handlePromoClear} disabled={isPaying}>
                       {t('remove')}
                     </Button>
                   ) : (
-                    <Button type="submit" variant="outline" disabled={isPaying || promoCode.trim() === ""}>
-                      {t('apply')}
+                    <Button
+                      type="submit"
+                      variant="outline"
+                      disabled={isPaying || validatingPromo || promoCode.trim() === ""}
+                    >
+                      {validatingPromo ? t('promoCheckingCode') : t('apply')}
                     </Button>
                   )}
                 </form>
-                {returnDiscount > 0 && (
+                {promo?.type === "free_order" && (
+                  <div className="text-sm text-green-600 font-medium">{t('promoFreeOrderApplied')}</div>
+                )}
+                {promo?.type !== "free_order" && discount > 0 && (
                   <div className="flex justify-between text-sm text-green-600">
-                    <span>{t('returnDiscount')}</span>
-                    <span>-CHF {returnDiscount.toFixed(2)}</span>
+                    <span>{promo?.type === "percentage" ? t('promoPercentageDiscount') : t('returnDiscount')}</span>
+                    <span>-CHF {discount.toFixed(2)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-semibold">

@@ -21,6 +21,7 @@ export type Product = {
     name: string;
     code: string;
     images: string[];
+    image3d?: string; // per-color 3D embed - /api/stock returns this per color, not just per product
     sizes: Array<{
       name: SizeKey;
       stock: number;

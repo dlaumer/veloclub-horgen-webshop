@@ -1,5 +1,6 @@
 import { Product } from "@/types/shop";
 import { useTranslation } from "@/hooks/useTranslation";
+import { assetUrl } from "@/lib/assetUrl";
 
 interface ProductCardProps {
   product: Product;
@@ -21,7 +22,7 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
     >
       <div className="aspect-square mb-4 flex items-center justify-center bg-white rounded-lg overflow-hidden relative">
         <img
-          src={product.image || '/placeholder.png'}
+          src={assetUrl(product.image) || assetUrl('/placeholder.png')}
           alt={product.name}
           className="w-full h-full object-contain"
         />

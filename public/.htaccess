@@ -1,0 +1,6 @@
+# Intentionally empty. An earlier version of this file used mod_rewrite/
+# mod_headers directives that this host doesn't support (or doesn't allow
+# via .htaccess), which took the whole site down with a 500 error. Now
+# using hash-based routing (see src/App.tsx) instead, which needs no
+# server-side rewrite rules at all, so this file is deliberately left
+# blank rather than removed.

@@ -10,13 +10,14 @@ import { CheckoutForm, CheckoutFormData } from "./CheckoutForm";
 import { Product, CartItem, CartState } from "@/types/shop";
 import { useToast } from "@/hooks/use-toast";
 import { useTranslation } from "@/hooks/useTranslation";
-import { calculateCartTotals, normalizeReturnCategory } from "@/lib/returnDiscount";
+import { normalizeReturnCategory } from "@/lib/returnDiscount";
+import { ResolvedPromo } from "@/lib/promoPricing";
+import { validatePromoCode } from "@/lib/promoApi";
 
 // NEW: stock APIs
 import { fetchStock, type Product as StockProduct } from "@/lib/stockApi"; // <-- add commitStockOnPay
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
-const RETURN_PROMO_CODE = (import.meta.env.VITE_RETURN_PROMO_CODE || "PROMOWEBSHOP").trim().toUpperCase();
 
 // Derive filters dynamically from products
 
@@ -31,7 +32,8 @@ export const Shop = () => {
   const [selectedProduct, setSelectedProduct] = useState<Product | null>(null);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [cart, setCart] = useState<CartState>({ items: [], isOpen: false });
-  const [returnPromoCode, setReturnPromoCode] = useState("");
+  const [appliedPromo, setAppliedPromo] = useState<ResolvedPromo>(null);
+  const [validatingPromo, setValidatingPromo] = useState(false);
   const [isPaying, setIsPaying] = useState(false); // <-- NEW
   const { toast } = useToast();
 
@@ -174,25 +176,31 @@ export const Shop = () => {
     setIsCheckoutFormOpen(true);
   };
 
-  const handleApplyPromoCode = (code: string) => {
-    const normalizedCode = code.trim().toUpperCase();
+  const handleApplyPromoCode = async (code: string) => {
+    const trimmed = code.trim();
+    if (!trimmed || validatingPromo) return;
 
-    if (normalizedCode !== RETURN_PROMO_CODE) {
+    setValidatingPromo(true);
+    try {
+      const result = await validatePromoCode(trimmed);
+      if (!result.valid) {
+        toast({
+          title: t('invalidPromoCode'),
+          variant: "destructive",
+        });
+        return;
+      }
+      setAppliedPromo({ code: trimmed.toUpperCase(), type: result.type, percentage: result.percentage });
       toast({
-        title: t('invalidPromoCode'),
-        variant: "destructive",
+        title: t('promoCodeApplied'),
       });
-      return;
+    } finally {
+      setValidatingPromo(false);
     }
-
-    setReturnPromoCode(normalizedCode);
-    toast({
-      title: t('promoCodeApplied'),
-    });
   };
 
   const handleClearPromoCode = () => {
-    setReturnPromoCode("");
+    setAppliedPromo(null);
   };
 
   function chfToRappen(x: number | string) {
@@ -207,11 +215,13 @@ export const Shop = () => {
 
     try {
       setIsPaying(true);
-      const isReturnPromoApplied = returnPromoCode.trim().toUpperCase() === RETURN_PROMO_CODE;
-      const { discountedItems } = calculateCartTotals(cart.items, isReturnPromoApplied);
 
-      // 1) Map your cart to what the Worker expects
-      const cartPayload = discountedItems.map((i) => ({
+      // The cart payload is now just a plain description of what's in the
+      // basket - no discount claims are sent (no isReturn/returnDiscount).
+      // The server is the sole source of truth for pricing: it re-resolves
+      // the promo code and recomputes every discount from scratch (see
+      // resolvePromoCode/computeCartPricing in backend/pb_hooks/lib_zahls.js).
+      const cartPayload = cart.items.map((i) => ({
         sku: i.colorId,           // your SKU per color/variant
         size: i.size,
         color: i.color,
@@ -220,8 +230,6 @@ export const Shop = () => {
         unit_amount: chfToRappen(i.price),     // in Rappen (CHF * 100)
         image: i.image ?? "",
         returnCategory: i.returnCategory ?? "no",
-        isReturn: i.isFreeByReturnPromo,
-        returnDiscount: chfToRappen(i.returnDiscount),
       }));
 
       if (cartPayload.length === 0) {
@@ -242,36 +250,23 @@ export const Shop = () => {
 
       // 3) Create a stable order id (also used as idempotency key server-side)
       const orderId = `${Date.now()}`;
-      console.log(cartPayload);
 
-      // 4) Calculate total (same logic as worker: first return item is free)
-      let totalCents = 0;
-      for (const item of cartPayload) {
-        const qty = Math.max(0, Number(item.qty || 0));
-        const unitFull = Math.round(Number(item.unit_amount || 0));
-        if (!qty) continue;
-
-        if (item.isReturn && item.returnDiscount > 0) {
-          // First return item: first unit is free
-          const discounted = Math.max(0, unitFull - Math.round(Number(item.returnDiscount || 0)));
-          totalCents += discounted;
-          if (qty > 1) totalCents += (qty - 1) * unitFull;
-        } else {
-          totalCents += qty * unitFull;
-        }
-      }
-
-      // 5) Choose endpoint based on total
-      const endpoint = totalCents === 0 ? `${API_BASE}/api/free-order` : `${API_BASE}/api/checkout`;
-      
-      const res = await fetch(endpoint, {
+      // /api/checkout handles both free (100%-discounted) and paid orders
+      // now - the server decides which based on its own recomputed total,
+      // so there's no client-side branch here anymore.
+      const res = await fetch(`${API_BASE}/api/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer,
           cart: cartPayload,
-          promoCode: returnPromoCode,
+          promoCode: appliedPromo?.code || "",
           orderId,
+          // Lets the backend send the post-payment redirect back to
+          // wherever checkout was actually started from (the real shop, or
+          // a localhost test) instead of always going to the production
+          // domain - see resolveReturnBaseUrl in backend/pb_hooks/lib_zahls.js.
+          returnBaseUrl: window.location.origin,
         })
       });
 
@@ -391,7 +386,8 @@ export const Shop = () => {
           onCheckout={handleCheckout}
           onApplyPromoCode={handleApplyPromoCode}
           onClearPromoCode={handleClearPromoCode}
-          isReturnPromoApplied={returnPromoCode.trim().toUpperCase() === RETURN_PROMO_CODE}
+          promo={appliedPromo}
+          validatingPromo={validatingPromo}
           isPaying={isPaying}
         />
 

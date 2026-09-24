@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, LogOut } from "lucide-react";
+import { Search, LogOut, X, Tag } from "lucide-react";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
@@ -8,22 +8,36 @@ import { Button } from "@/components/ui/button";
 interface AdminHeaderProps {
   search: string;
   onSearchChange: (value: string) => void;
+  onOpenPromoCodes: () => void;
 }
 
-const FLAGS: Record<"de" | "en", { bars: string[] }> = {
-  de: { bars: ["#1a1a1a", "#c1272d", "#d4af37"] },
-  en: { bars: ["#1c2b5c", "#ffffff", "#c1272d"] },
+const DE_BARS = ["#1a1a1a", "#c1272d", "#d4af37"];
+
+const Flag = ({ lang }: { lang: "de" | "en" }) => {
+  if (lang === "en") {
+    return (
+      <svg
+        viewBox="0 0 20 14"
+        className="w-5 h-3.5 rounded-sm overflow-hidden shrink-0 border border-black/10"
+      >
+        <rect width="20" height="14" fill="#1c2b5c" />
+        <path d="M0,0 L20,14 M20,0 L0,14" stroke="#ffffff" strokeWidth="2.8" />
+        <path d="M0,0 L20,14 M20,0 L0,14" stroke="#c1272d" strokeWidth="1.2" />
+        <path d="M10,0 V14 M0,7 H20" stroke="#ffffff" strokeWidth="4.2" />
+        <path d="M10,0 V14 M0,7 H20" stroke="#c1272d" strokeWidth="2.2" />
+      </svg>
+    );
+  }
+  return (
+    <span className="w-5 h-3.5 rounded-sm overflow-hidden flex flex-col shrink-0 border border-black/10">
+      {DE_BARS.map((bg, i) => (
+        <span key={i} className="flex-1" style={{ background: bg }} />
+      ))}
+    </span>
+  );
 };
 
-const Flag = ({ lang }: { lang: "de" | "en" }) => (
-  <span className="w-5 h-3.5 rounded-sm overflow-hidden flex flex-col shrink-0 border border-black/10">
-    {FLAGS[lang].bars.map((bg, i) => (
-      <span key={i} className="flex-1" style={{ background: bg }} />
-    ))}
-  </span>
-);
-
-export const AdminHeader = ({ search, onSearchChange }: AdminHeaderProps) => {
+export const AdminHeader = ({ search, onSearchChange, onOpenPromoCodes }: AdminHeaderProps) => {
   const { language, setLanguage } = useLanguage();
   const { t } = useTranslation();
   const { auth, logout } = useAdminAuth();
@@ -45,11 +59,32 @@ export const AdminHeader = ({ search, onSearchChange }: AdminHeaderProps) => {
           value={search}
           onChange={(e) => onSearchChange(e.target.value)}
           placeholder={t("adminSearchPlaceholder")}
-          className="w-full box-border py-2 sm:py-[11px] pl-8 sm:pl-[42px] pr-2 sm:pr-4 rounded-[10px] border border-[hsl(220_13%_88%)] bg-[hsl(210_30%_97%)] text-sm outline-none text-[hsl(220_13%_18%)]"
+          className="w-full box-border py-2 sm:py-[11px] pl-8 sm:pl-[42px] pr-8 sm:pr-9 rounded-[10px] border border-[hsl(220_13%_88%)] bg-[hsl(210_30%_97%)] text-sm outline-none text-[hsl(220_13%_18%)]"
         />
+        {search && (
+          <button
+            type="button"
+            onClick={() => onSearchChange("")}
+            title={t("adminClearSearch")}
+            aria-label={t("adminClearSearch")}
+            className="absolute right-2 sm:right-2.5 top-1/2 -translate-y-1/2 flex items-center justify-center w-5 h-5 rounded-full text-[hsl(220_13%_55%)] hover:bg-[hsl(220_13%_88%)] hover:text-[hsl(220_13%_30%)] cursor-pointer"
+          >
+            <X size={13} />
+          </button>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={onOpenPromoCodes}
+          title={t("adminPromoCodes")}
+          aria-label={t("adminPromoCodes")}
+          className="text-[hsl(220_13%_35%)] h-9 w-9 shrink-0"
+        >
+          <Tag size={16} />
+        </Button>
         <div className="relative">
           <button
             onClick={() => setMenuOpen((v) => !v)}
@@ -78,6 +113,11 @@ export const AdminHeader = ({ search, onSearchChange }: AdminHeaderProps) => {
             </div>
           )}
         </div>
+        {auth && (
+          <span className="hidden sm:inline text-[13px] text-[hsl(220_13%_45%)] truncate max-w-[160px]">
+            {auth.record.name || auth.record.email}
+          </span>
+        )}
         {auth && (
           <Button
             variant="outline"

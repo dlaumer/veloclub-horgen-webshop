@@ -1,23 +1,38 @@
 #!/usr/bin/env python3
 """
-Import the legacy "Velo Club Horgen Webshop.xlsx" (Lagerbestand + Bestellungen
-sheets) into the new PocketBase backend.
+Sync PocketBase with an UPDATED "Velo Club Horgen Webshop.xlsx" export -
+use this (instead of import_legacy_xlsx.py) once the initial import has
+already happened and the Excel file has since picked up new orders and/or
+changed stock counts.
 
 Run this on YOUR OWN computer, not the server - it only needs network access
 to your public PocketBase URL and the local xlsx file. Nothing here needs
 SSH or server access.
 
+What this script does, vs. the original one-time import:
+  - Articles/stock are NOT synced anymore - that one-time catch-up (create
+    new articles, update stock counts) has already been done. This script
+    only reads the existing "articles" collection (article_number -> id)
+    to match order_items against, it never creates, updates or reads the
+    Lagerbestand sheet at all.
+  - Orders: unchanged from the original import - a new Order ID creates
+    a new order (+ its order_items + a "purchase" log entry). An
+    order_number that already exists is left untouched (ready/picked_up
+    status now lives in the dashboard, not the Excel), except that a
+    missing "purchase" log entry is still backfilled if somehow absent.
+
 Setup (once):
     pip install openpyxl requests
 
 Usage:
-    python import_legacy_xlsx.py "C:\\path\\to\\Velo Club Horgen Webshop (3).xlsx"
+    python sync_legacy_xlsx.py "C:\\path\\to\\Velo Club Horgen Webshop (4).xlsx"
 
 You'll be prompted for your PocketBase superuser email/password - they are
 only used to log in and are never stored or sent anywhere else.
 
-Safe to re-run: articles are matched by article_number and orders by
-order_number, so anything already imported is skipped instead of duplicated.
+Safe to re-run: orders are matched by order_number - anything already
+imported is left alone (or just gets a missing purchase log backfilled)
+instead of being duplicated.
 """
 
 import re
@@ -27,17 +42,6 @@ import requests
 
 POCKETBASE_URL = "https://api-webshop-veloclubhorgen.duckdns.org"
 
-# Lagerbestand sheet: real header row is 5 (rows 1-4 are a title/banner area)
-LAGERBESTAND_HEADER_ROW = 5
-
-# Size columns as they appear in the Lagerbestand header. A cell value of
-# "x" (or blank) means "this product doesn't come in that size" and is
-# skipped; a number (incl. 0) means "comes in this size, this much stock".
-SIZE_COLUMNS = [
-    "OneSize", "6/7 Jahre", "8/9 Jahre", "10/11 Jahre", "12/13 Jahre",
-    "36-41", "42-47", "XXS", "XS", "S", "M", "L", "XL", "XXL", "3XL",
-]
-
 
 def to_id_str(value):
     """Excel gives us numeric IDs (article numbers, order IDs) as floats."""
@@ -46,16 +50,6 @@ def to_id_str(value):
     if isinstance(value, float):
         return str(int(value))
     return str(value).strip()
-
-
-def parse_image_urls(raw):
-    """'[url1, url2, url3]' -> ['url1', 'url2', 'url3']"""
-    if not raw:
-        return []
-    s = str(raw).strip()
-    if s.startswith("[") and s.endswith("]"):
-        s = s[1:-1]
-    return [u.strip() for u in s.split(",") if u.strip()]
 
 
 def header_map(ws, header_row):
@@ -93,12 +87,14 @@ class PocketBase:
             self.token = None
             return
 
-        # Note: using a plain (visible) prompt instead of getpass.getpass()
-        # here on purpose - getpass is known to hang indefinitely in Git
-        # Bash / MSYS2 terminals on Windows, since it can't read hidden
-        # input from that kind of console. This is a local one-off admin
-        # script, so a visible password entry is an acceptable trade-off.
-        password = input("PocketBase superuser password (visible while typing): ").strip()
+        # Visible prompt instead of getpass.getpass() on purpose - getpass
+        # hangs indefinitely in Git Bash / MSYS2 terminals on Windows. This
+        # is a local one-off admin script, so visible entry is acceptable.
+        # Explicit flush before input() - Git Bash's MinGW pty can otherwise
+        # buffer this prompt and never show it, making the script look
+        # frozen even though it's just waiting for you to type blind.
+        print("PocketBase superuser password (visible while typing): ", end="", flush=True)
+        password = input().strip()
         print("Logging in...")
         sys.stdout.flush()
         try:
@@ -143,85 +139,53 @@ class PocketBase:
             r.raise_for_status()
         return r.json()
 
+    def update(self, collection, record_id, data):
+        r = requests.patch(
+            f"{self.base_url}/api/collections/{collection}/records/{record_id}",
+            json=data,
+            headers=self._headers(),
+            timeout=15,
+        )
+        if not r.ok:
+            print(f"  ERROR updating {collection}/{record_id}: {r.status_code} {r.text}")
+            print(f"  payload was: {data}")
+            r.raise_for_status()
+        return r.json()
 
-def import_articles(wb, pb):
-    ws = wb["Lagerbestand"]
-    col = header_map(ws, LAGERBESTAND_HEADER_ROW)
-    article_id_by_number = {}
-    n_articles = 0
-    n_items = 0
-
-    for r in range(LAGERBESTAND_HEADER_ROW + 1, ws.max_row + 1):
-        article_number = to_id_str(ws.cell(row=r, column=col["Artikel-Nr."]).value)
-        if not article_number:
-            continue
-
-        existing = pb.find_one("articles", f'article_number = "{article_number}"')
-        if existing:
-            # NOTE: still fall through to the size/stock loop below - an
-            # earlier run may have crashed after creating the article but
-            # before finishing its article_items rows, so we must not skip
-            # those. Each article_items row is checked/created individually.
-            print(f"  articles: {article_number} already exists, skipping create")
-            rec = existing
-        else:
-            data = {
-                "article_number": article_number,
-                "product_id": ws.cell(row=r, column=col["Handle"]).value or "",
-                "name": ws.cell(row=r, column=col["Handle"]).value or "",
-                "price": ws.cell(row=r, column=col["Preis"]).value or 0,
-                "cost_price": ws.cell(row=r, column=col["Preis\nThömus"]).value or 0,
-                "main_category": ws.cell(row=r, column=col["Rubrik"]).value or "",
-                "category": ws.cell(row=r, column=col["Kategorie"]).value or "",
-                "color_name": ws.cell(row=r, column=col["Artikel"]).value or "",
-                "color_code": ws.cell(row=r, column=col["Farbe"]).value or "",
-                # NOTE: no "image_urls" anymore - articles.images is a real
-                # uploaded-file field now (see backend/pb_migrations/
-                # 1783901500_articles_uploaded_images.js and 1783902000_
-                # articles_drop_image_urls.js). This script doesn't upload
-                # images (it's the Node script, import_legacy_xlsx.mjs,
-                # that's actually kept in sync with that - it downloads each
-                # row's "URL Artikelbild" URLs and uploads them for you). If
-                # you need to run a fresh import with this Python version,
-                # use the Node script afterwards, or run backend/scripts/
-                # migrate_images_to_files.mjs's approach against a
-                # temporary image_urls-like source.
-                "embed_3d": ws.cell(row=r, column=col["3D Bild"]).value or "",
-                "just_stock": ws.cell(row=r, column=col["JustStock"]).value or "no",
-                "return_category": ws.cell(row=r, column=col["Rückgabe"]).value or "no",
-                "description": ws.cell(row=r, column=col["Beschreibung"]).value or "",
-                "notes": ws.cell(row=r, column=col["Bemerkungen Lagerbestand"]).value or "",
-                "sort_order": ws.cell(row=r, column=col["Pos."]).value or 0,
-            }
-            rec = pb.create("articles", data)
-            n_articles += 1
-            print(f"  articles: created {article_number} ({data['name']} / {data['color_name']})")
-
-        article_id_by_number[article_number] = rec["id"]
-
-        for size_name in SIZE_COLUMNS:
-            if size_name not in col:
-                continue
-            val = ws.cell(row=r, column=col[size_name]).value
-            if val is None or isinstance(val, str):
-                continue  # 'x' or blank -> product doesn't come in this size
-            existing_item = pb.find_one(
-                "article_items", f'article = "{rec["id"]}" && size = "{size_name}"'
+    def list_all(self, collection, fields=None):
+        """Fetches every record in a collection (paginated, 500/page)."""
+        items = []
+        page = 1
+        while True:
+            params = {"perPage": 500, "page": page}
+            if fields:
+                params["fields"] = fields
+            r = requests.get(
+                f"{self.base_url}/api/collections/{collection}/records",
+                params=params,
+                headers=self._headers(),
+                timeout=15,
             )
-            if existing_item:
-                continue
-            pb.create("article_items", {
-                "article": rec["id"],
-                "size": size_name,
-                "stock": int(val),
-            })
-            n_items += 1
-
-    print(f"articles imported: {n_articles}, article_items imported: {n_items}")
-    return article_id_by_number
+            r.raise_for_status()
+            body = r.json()
+            items.extend(body.get("items", []))
+            if page >= body.get("totalPages", 1):
+                break
+            page += 1
+        return items
 
 
-def import_orders(wb, pb, article_id_by_number):
+def fetch_article_id_map(pb):
+    """Looks up article_number -> record id for every existing article, so
+    sync_orders() can attach order_items to the right article. Read-only -
+    articles/stock are no longer synced from the Excel by this script (that
+    one-time catch-up is already done), so the Lagerbestand sheet is never
+    even opened here."""
+    articles = pb.list_all("articles", fields="id,article_number")
+    return {a["article_number"]: a["id"] for a in articles}
+
+
+def sync_orders(wb, pb, article_id_by_number):
     ws = wb["Bestellungen"]
     col = header_map(ws, 1)
 
@@ -232,11 +196,20 @@ def import_orders(wb, pb, article_id_by_number):
             continue
         orders.setdefault(oid, []).append(r)
 
+    total = len(orders)
+    print(f"  {total} distinct orders in the sheet - checking each against the database...")
+
     n_orders = 0
     n_items = 0
     n_logs = 0
 
-    for oid, rows in orders.items():
+    for i, (oid, rows) in enumerate(orders.items(), start=1):
+        # Existing (already-imported, unchanged) orders print nothing below,
+        # so without this the script can go quiet for a long stretch while
+        # it works through a big backlog of already-known orders - print a
+        # heartbeat every 50 so it's clear it's still running, not frozen.
+        if i % 50 == 0 or i == total:
+            print(f"  ... checked {i}/{total}")
         first = rows[0]
         name_full = str(ws.cell(row=first, column=col["Name"]).value or "").strip()
         parts = re.split(r"\s+", name_full, maxsplit=1)
@@ -249,9 +222,11 @@ def import_orders(wb, pb, article_id_by_number):
         existing_order = pb.find_one("orders", f'order_number = "{oid}"')
 
         if existing_order:
+            # Existing order: left untouched on purpose - ready/picked_up/
+            # cancelled status is managed in the admin dashboard now, not
+            # the Excel, so this script must not overwrite it.
             order_rec = existing_order
             create_items = False
-            print(f"  orders: {oid} already exists, skipping create")
         else:
             order_data = {
                 "order_number": oid,
@@ -265,10 +240,8 @@ def import_orders(wb, pb, article_id_by_number):
                 "amount_paid": ws.cell(row=first, column=col["Summe Pro Kunde"]).value or 0,
                 "currency": ws.cell(row=first, column=col["Währung"]).value or "CHF",
                 "placed_at": placed_at,
-                # tri-state text field: "" = unknown. Legacy data doesn't tell
-                # us whether an order was ever marked ready/picked up, so
-                # leave it explicitly unknown rather than defaulting to "no"
-                # (which would wrongly imply we know it wasn't).
+                # tri-state text field: "" = unknown, same convention as the
+                # original import.
                 "ready": "",
                 "picked_up": "",
             }
@@ -277,10 +250,6 @@ def import_orders(wb, pb, article_id_by_number):
             create_items = True
             print(f"  orders: created {oid} ({buyer_name} {buyer_lastname})")
 
-        # Backfill support: an earlier run of this script (before "logs"
-        # support was added) may have already created this order without a
-        # purchase log entry. Detect that and add the missing log now,
-        # without re-creating order_items (those already exist).
         need_log = True
         if not create_items:
             already_logged = pb.find_one(
@@ -289,7 +258,7 @@ def import_orders(wb, pb, article_id_by_number):
             need_log = not already_logged
 
         if not create_items and not need_log:
-            continue  # this order is fully done already, nothing left to do
+            continue  # this order is fully in sync already
 
         note_parts = []
         for r in rows:
@@ -321,10 +290,6 @@ def import_orders(wb, pb, article_id_by_number):
                 note_parts.append(f"{article_number} x{qty} ({size})")
 
         if need_log:
-            # so legacy orders show up in the dashboard's log/history view
-            # too, same as orders placed through the new system - just as a
-            # single "purchase" entry (we don't know ready/picked_up history
-            # for these, see the ready/picked_up "" = unknown convention).
             action = "creating" if create_items else "backfilling missing"
             print(f"    logs: {action} purchase log for {oid}")
             pb.create("logs", {
@@ -335,7 +300,7 @@ def import_orders(wb, pb, article_id_by_number):
             })
             n_logs += 1
 
-    print(f"orders imported: {n_orders}, order_items imported: {n_items}, logs imported: {n_logs}")
+    print(f"orders created: {n_orders}, order_items created: {n_items}, logs created: {n_logs}")
 
 
 def main():
@@ -348,11 +313,12 @@ def main():
     pb = PocketBase(POCKETBASE_URL)
     pb.login()
 
-    print("\nImporting articles + stock...")
-    article_id_by_number = import_articles(wb, pb)
+    print("\nLooking up existing articles...")
+    article_id_by_number = fetch_article_id_map(pb)
+    print(f"  {len(article_id_by_number)} articles found.")
 
-    print("\nImporting historical orders...")
-    import_orders(wb, pb, article_id_by_number)
+    print("\nSyncing orders...")
+    sync_orders(wb, pb, article_id_by_number)
 
     print("\nDone.")
 

@@ -5,14 +5,20 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useAdminAuth } from "@/contexts/AdminAuthContext";
+import { consumeSessionExpiredFlag } from "@/lib/adminApi";
+import { useTranslation } from "@/hooks/useTranslation";
 
 const AdminLogin = () => {
   const { login, isAuthenticated } = useAdminAuth();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  // read once on mount (not in render) so it doesn't get consumed before we
+  // can show it, and so a later normal logout doesn't re-trigger it
+  const [sessionExpired] = useState(() => consumeSessionExpiredFlag());
 
   if (isAuthenticated) {
     return <Navigate to="/admin" replace />;
@@ -40,6 +46,11 @@ const AdminLogin = () => {
           <CardDescription>Webshop Veloclub Horgen &mdash; staff dashboard</CardDescription>
         </CardHeader>
         <CardContent>
+          {sessionExpired && (
+            <div className="mb-4 bg-[hsl(38_92%_95%)] text-[hsl(32_81%_29%)] text-sm rounded-lg px-4 py-3">
+              {t("adminSessionExpired")}
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="admin-email">Email</Label>

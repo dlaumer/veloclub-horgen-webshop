@@ -1,0 +1,1442 @@
+/** Web App settings:
+ * Deploy > New deployment > Type: Web app
+ * Execute as: Me
+ * Who has access: Anyone with the link
+ *
+ * Sizes:
+ * - Size columns are discovered dynamically from the header row (you can add new size columns anytime).
+ * - If a size cell contains "x" (or "X" / "✗"), that size is BLOCKED for that SKU.
+ * - Blocked sizes are NOT listed in the stock output at all.
+ * - Blocked sizes are rejected in purchase() and stockDelta() (hard fail).
+ */
+
+const SIZE_ALIASES = { '2XL': 'XXL', 'XXXL': '3XL', 'XXX-L': '3XL', 'XXXXL': '4XL', 'XXXXXL': '5XL', "6 / 7": "6/7 Jahre" };
+const SHEET_NAME = 'Lagerbestand'; // or e.g. 'Aktueller Lagerbestand'
+
+// ---------- HTTP ----------
+function doGet(e) {
+  const action = (e.parameter.action || 'stock').toLowerCase();
+  if (action === 'stock') return json(listStock());
+  if (action === 'sku') return json(getBySku(String(e.parameter.sku || '')));
+  if (action === 'headers') return json(debugHeaders());
+  return bad('Unknown action');
+}
+
+function doPost(e) {
+  const body = (e.postData && e.postData.type === 'application/json')
+    ? JSON.parse(e.postData.contents)
+    : {};
+
+  // --- Token check ---
+  const token = String(e.parameter.token || body.token || '');
+  const SECRET = PropertiesService.getScriptProperties().getProperty('API_TOKEN');
+  if (!SECRET || token !== SECRET) return forbidden('Invalid token');
+
+  // --- Routing by action ---
+  const action = String(e.parameter.action || body.action || '').toLowerCase();
+
+  if (action === 'stockdelta') return json(stockDelta(body));
+
+  if (action === 'sendorderemail') {
+    const order = body.order || {};
+    sendOrderEmail(order);
+    return json({ ok: true });
+  }
+
+  return bad('Unknown action');
+}
+// ---------- STOCK (READ) ----------
+function listStock() {
+  const { headRow, head, rows, normMap } = readSheet_();
+  const ci = cols_(head, normMap);
+
+  // Normalize row objects
+  const items = rows
+    .filter(r => (ci.sku >= 0 && r[ci.sku] != null && String(r[ci.sku]).trim() !== ''))
+    .map(r => normalizeRow_(r, ci));
+
+  // Group by handle (fallback to SKU if no handle)
+  const byHandle = new Map();
+  for (const it of items) {
+    const key = it.handle || it.sku;
+    if (!byHandle.has(key)) byHandle.set(key, []);
+    byHandle.get(key).push(it);
+  }
+
+  const products = [];
+  for (const [handle, group] of byHandle.entries()) {
+    const base = group[0];
+
+    // group variants by color (prefer Farbe; else Farbcode; else empty)
+    const byColor = new Map();
+    for (const v of group) {
+      const colorKey = (v.colorName || v.colorCode || '').toUpperCase();
+      if (!byColor.has(colorKey)) byColor.set(colorKey, []);
+      byColor.get(colorKey).push(v);
+    }
+
+    const colors = [];
+    for (const [, variants] of byColor.entries()) {
+      const rep = variants[0];
+
+      // merge unique images across variants of same color
+      const images = [];
+      for (const vv of variants) {
+        const list = (vv.images && vv.images.length ? vv.images : (vv.imageUrl ? [vv.imageUrl] : []));
+        for (const u of list) if (u && !images.includes(u)) images.push(u);
+      }
+
+      // sum sizes for that color (dynamic + supports "x" blocked)
+      // IMPORTANT CHANGE:
+      // - If ANY row for that color has "x" in a size column => that size is omitted entirely from output
+      // - Otherwise: if at least one non-empty numeric cell exists => stock is sum (can be 0)
+      // - Otherwise: stock = null (keeps your "empty vs 0" behavior)
+      const sizeTotals = {};
+      const order = (ci.sizeOrder && ci.sizeOrder.length) ? ci.sizeOrder : Object.keys(ci.size);
+
+      for (const s of order) {
+        let blocked = false;
+        let hasAnyNonEmpty = false;
+        let sum = 0;
+
+        for (const vv of variants) {
+          const raw = vv.sizes[s];
+
+          if (isBlocked_(raw)) { // any "x" blocks the size for this color
+            blocked = true;
+            break;
+          }
+
+          const parsed = parseStockCell_(raw); // null/number
+          if (parsed === null) continue;
+
+          hasAnyNonEmpty = true;
+          sum += parsed;
+        }
+
+        if (blocked) {
+          // OMIT this size completely
+          continue;
+        }
+
+        sizeTotals[s] = hasAnyNonEmpty ? sum : null;
+      }
+
+      const sizesArr = Object.keys(sizeTotals).map(s => ({
+        name: s,
+        stock: sizeTotals[s] // number | null
+      }));
+
+      colors.push({
+        id: rep.sku || '',
+        name: rep.name || '',
+        code: rep.colorName || rep.colorCode || '',
+        images,
+        image3d: rep.image3d || '', // ✅ moved here: per-color 3D model
+        sizes: sizesArr
+      });
+    }
+
+    // hero image
+    let hero = '';
+    const firstColorWithImages = colors.find(c => c.images && c.images.length);
+    if (firstColorWithImages) hero = firstColorWithImages.images[0];
+    else if (base.imageUrl) hero = base.imageUrl;
+
+    products.push({
+      id: String(handle),
+      name: String(handle),
+      price: isFinite(base.price) ? base.price : 0,
+      category: base.category || '',
+      mainCategory: base.mainCategory || '',
+      description: base.description || '',
+      justStock: base.justStock || '',
+      image: hero || '',
+      isReturn: base.isReturn || '',
+      colors
+    });
+  }
+  console.log(products)
+
+  return { ok: true, data: products };
+}
+
+
+// ---------- STOCK (WRITE) ----------
+/**
+ * body: { items: [{ sku, size, qty } ... ] }
+ * - qty is the DELTA to apply (e.g. -2 to decrement by 2, +3 to add 3)
+ */
+function stockDelta(body) {
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (!items.length) throw new Error('No items');
+
+  const { sh, headRow, head, normMap } = readSheet_();
+  const ci = cols_(head, normMap);
+
+  // Build row index by SKU
+  const lastRow = sh.getLastRow();
+  const skuCol1 = ci.sku + 1;
+  const skuValues = sh.getRange(headRow + 1, skuCol1, Math.max(0, lastRow - headRow), 1).getValues().flat();
+  const rowBySku = new Map();
+  skuValues.forEach((v, i) => { if (v) rowBySku.set(String(v), headRow + 1 + i); });
+
+  // Validate
+  for (const it of items) {
+    if (!it || !it.sku || it.size == null || it.qty == null) {
+      throw new Error('Each item needs { sku, size, qty }');
+    }
+    const rawS = nrm(String(it.size));
+    const S = SIZE_ALIASES[rawS] || rawS;
+
+    if (!rowBySku.has(String(it.sku))) throw new Error(`SKU not found: ${it.sku}`);
+    if (!(S in ci.size) || ci.size[S] < 0) throw new Error(`Size column not found in sheet: ${S}`);
+  }
+
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+
+  try {
+    for (const it of items) {
+      const rawS = nrm(String(it.size));
+      const S = SIZE_ALIASES[rawS] || rawS;
+
+      const row = rowBySku.get(String(it.sku));
+      const col = ci.size[S] + 1;
+      const cell = sh.getRange(row, col);
+
+      const current = cell.getValue();
+      if (isBlocked_(current)) {
+        throw new Error(`Size ${S} is blocked (x) for SKU ${it.sku}`);
+      }
+
+      const have = num(current);
+      cell.setValue(have + Number(it.qty));
+
+      // recompute total if present
+      if (ci.total >= 0) {
+        let sum = 0;
+        for (const s of Object.keys(ci.size)) {
+          const cIdx = ci.size[s];
+          if (cIdx >= 0) {
+            const v = sh.getRange(row, cIdx + 1).getValue();
+            if (!isBlocked_(v)) sum += num(v);
+          }
+        }
+        sh.getRange(row, ci.total + 1).setValue(sum);
+      }
+    }
+
+    SpreadsheetApp.flush();
+    return listStock();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+// ---------- SKU LOOKUP ----------
+function getBySku(sku) {
+  if (!sku) return { ok: false, error: 'Missing sku' };
+  const { rows, head, normMap } = readSheet_();
+  const ci = cols_(head, normMap);
+  const idx = rows.findIndex(r => String(r[ci.sku]) === sku);
+  if (idx < 0) return { ok: false, error: `SKU not found: ${sku}` };
+  const r = rows[idx];
+  const v = normalizeRow_(r, ci);
+  return { ok: true, data: v };
+}
+
+// ---------- PURCHASE (WRITE / CHECKOUT) ----------
+/** body: { items: [{ sku, size, qty }...], idempotencyKey?: string } */
+function purchase(body) {
+  const items = Array.isArray(body.items) ? body.items : [];
+  if (items.length === 0) throw new Error('No items');
+
+  const key = body.idempotencyKey && String(body.idempotencyKey);
+  const props = PropertiesService.getScriptProperties();
+  if (key && props.getProperty('idem_' + key)) return { ok: true, alreadyProcessed: true };
+
+  const { sh, headRow, head, normMap } = readSheet_();
+  const ci = cols_(head, normMap);
+
+  const lastRow = sh.getLastRow();
+  const skuCol1 = ci.sku + 1;
+  const skuValues = sh.getRange(headRow + 1, skuCol1, lastRow - headRow, 1).getValues().flat();
+  const rowBySku = new Map();
+  skuValues.forEach((v, i) => { if (v) rowBySku.set(String(v), headRow + 1 + i); });
+
+  // Validate
+  for (const it of items) {
+    if (!it || !it.sku || it.size == null || it.qty == null) throw new Error('Each item needs sku, size, qty');
+
+    const rawS = nrm(String(it.size));
+    const sizeKey = SIZE_ALIASES[rawS] || rawS;
+
+    if (!rowBySku.has(String(it.sku))) throw new Error(`SKU not found: ${it.sku}`);
+    if (!(sizeKey in ci.size) || ci.size[sizeKey] < 0) throw new Error(`Size column not found in sheet: ${sizeKey}`);
+  }
+
+  const lock = LockService.getDocumentLock();
+  lock.waitLock(30000);
+
+  try {
+    // Check availability
+    for (const it of items) {
+      const rawS = nrm(String(it.size));
+      const sizeKey = SIZE_ALIASES[rawS] || rawS;
+
+      const row = rowBySku.get(String(it.sku));
+      const col = ci.size[sizeKey] + 1;
+
+      const cellVal = sh.getRange(row, col).getValue();
+      if (isBlocked_(cellVal)) {
+        throw new Error(`Size ${sizeKey} is blocked (x) for SKU ${it.sku}`);
+      }
+
+      const have = num(cellVal);
+      if (have < Number(it.qty)) throw new Error(`Not enough stock for ${it.sku} ${sizeKey} (have ${have}, need ${it.qty})`);
+    }
+
+    // Decrement and recompute total if present
+    for (const it of items) {
+      const rawS = nrm(String(it.size));
+      const sizeKey = SIZE_ALIASES[rawS] || rawS;
+
+      const row = rowBySku.get(String(it.sku));
+      const col = ci.size[sizeKey] + 1;
+      const cell = sh.getRange(row, col);
+
+      const cur = cell.getValue();
+      if (isBlocked_(cur)) {
+        throw new Error(`Size ${sizeKey} is blocked (x) for SKU ${it.sku}`);
+      }
+
+      const have = num(cur);
+      cell.setValue(have - Number(it.qty));
+
+      // recompute total (if the sheet has a total column)
+      if (ci.total >= 0) {
+        let sum = 0;
+        for (const key2 of Object.keys(ci.size)) {
+          const cIdx = ci.size[key2];
+          if (cIdx >= 0) {
+            const v = sh.getRange(row, cIdx + 1).getValue();
+            if (!isBlocked_(v)) sum += num(v);
+          }
+        }
+        sh.getRange(row, ci.total + 1).setValue(sum);
+      }
+    }
+
+    SpreadsheetApp.flush();
+    if (key) props.setProperty('idem_' + key, '1');
+
+    return listStock();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+
+// ---------- HARD-CODED TEST WRAPPER (CALL THIS) ----------
+function sendTestOrderEmailHardcoded() {
+  console.log("Reached doPost");
+
+  const email = "daniel.laumer@gmail.com";
+
+  // Your provided input (hardcoded)
+  const itemsInput = [
+    {
+      "sku": "20128",
+      "size": "8/9 JAHRE",
+      "color": "yellow",
+      "qty": 1,
+      "name": "Thömus Bibshort Kids",
+      "unit_amount": 5100,
+      "image": "https://webshop-veloclubhorgen.ch/images/Bibshort Kids Front.png",
+      "isReturn": false,
+      "returnDiscount": 0
+    },
+    {
+      "sku": "20127",
+      "size": "8/9 JAHRE",
+      "color": "yellow",
+      "qty": 1,
+      "name": "Thömus SS Jersey Team Pro Kids",
+      "unit_amount": 5700,
+      "image": "https://webshop-veloclubhorgen.ch/images/SS Jersey Team Pro Kids Front.png",
+      "isReturn": true,
+      "returnDiscount": 5700
+    }
+  ];
+
+  // Map into the shape your email function expects: title/sku/size/color/qty/unit_amount/image
+  const items = itemsInput.map(it => ({
+    sku: it.sku,
+    title: it.name,     // IMPORTANT: your function uses it.title first
+    size: it.size,
+    color: it.color,
+    qty: it.qty,
+    unit_amount: it.unit_amount,
+    image: it.image,
+    isReturn: !!it.isReturn,
+    returnDiscount: Number(it.returnDiscount || 0),
+    name: it.name        // optional carry-through for sheet use
+  }));
+
+  const order = {
+    email,
+    orderId: "TEST-" + Utilities.formatDate(new Date(), Session.getScriptTimeZone(), "yyyyMMdd-HHmmss"),
+    currency: "CHF",
+    name: "Daniel",
+    pickupNote: "Die Abholung erfolgt bei Thömus Bike World in Au-Wädenswil.",
+    contactNote: "Bei Fragen antworte einfach auf diese E-Mail.",
+    kidzbike: true,
+    comments: "",
+    items
+    // total: optional; if omitted, your function calculates it from items
+  };
+
+  sendOrderEmail(order);
+}
+
+// ---------- EMAIL + ORDER RECORDING (UNCHANGED FROM YOUR VERSION) ----------
+function sendOrderEmail(order) {
+  console.log("Reached sendOrderEmail");
+  let email = order?.email;
+  if (!email) return;
+
+  console.log(email)
+  const shopName = "Velo Club Horgen";
+  const logoUrl = "https://www.veloclub-horgen.ch/clubdesk/fileservlet?type=image&id=1000962&s=djEtuF-WHA9ki0P_HckwukZ6Ly4VbgyocWRDbswQV7sPSRY=&imageFormat=_512x512";
+
+  const orderId = order?.orderId ? String(order.orderId) : "";
+  const currency = "CHF";
+
+  const fmtMoney = (val) => {
+    if (typeof val !== "number" || isNaN(val)) return "-";
+    return val.toFixed(2).replace(".", ",");
+  };
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+
+  const linesText = items.map(it => {
+    const title = it.title || it.sku || "Artikel";
+    const size = it.size ? ` (${it.size})` : "";
+    const color = it.color ? `, Farbe: ${it.color}` : "";
+    const qty = it.qty ?? 1;
+    const unitChf = it.unit_amount != null ? it.unit_amount / 100 : null;
+    const price = unitChf != null ? `${fmtMoney(unitChf)} ${currency}` : "-";
+    const lineTotalChf = unitChf != null ? unitChf * qty : null;
+    const lineTotal = lineTotalChf != null ? `${fmtMoney(lineTotalChf)} ${currency}` : "-";
+    return `• ${title}${size}${color} × ${qty} — Einzelpreis: ${price}, Zeilensumme: ${lineTotal}`;
+  });
+
+  const totalNumber = (typeof order?.total === "number")
+    ? order.total
+    : items.reduce((sum, it) => {
+      const qty = it.qty || 0;
+      const unitChf = it.unit_amount != null ? it.unit_amount / 100 : 0;
+      return sum + unitChf * qty;
+    }, 0);
+
+  const total = `${fmtMoney(totalNumber)} ${currency}`;
+
+  const name = order?.name || "Liebe*r Kunde*in";
+  const pickup = order?.pickupNote || "Die Abholung erfolgt bei Thömus Bike World in Au-Wädenswil.";
+  const contact = order?.contactNote || "Bei Fragen antworte einfach auf diese E-Mail.";
+  const kidzbike = order?.kidzbike || false;
+  const comments = order?.comments || "";
+
+  const subject = orderId
+    ? `Bestellbestätigung #${orderId} – ${shopName}`
+    : `Bestellbestätigung – ${shopName}`;
+
+  const bodyText =
+    `${name},
+
+vielen Dank für deine Bestellung${orderId ? " #" + orderId : ""} beim ${shopName}!
+
+Bestellte Artikel:
+${linesText.join("\n")}
+
+Gesamtsumme: ${total}
+
+${pickup}
+${contact}
+
+Sportliche Grüsse
+${shopName}
+`;
+
+  const inlineImages = {};
+
+  try {
+    const logoBlob = UrlFetchApp.fetch(logoUrl).getBlob();
+    inlineImages["logo"] = logoBlob;
+  } catch (e) {
+    console.log("Failed to fetch logo: " + e);
+  }
+
+  const rowsHtml = items.map((it, idx) => {
+    const title = it.title || it.sku || "Artikel";
+    const qty = it.qty ?? 1;
+
+    const unitChf = it.unit_amount != null ? it.unit_amount / 100 : null;
+    const price = unitChf != null ? `${fmtMoney(unitChf)} ${currency}` : "-";
+    const lineTotalChf = unitChf != null ? unitChf * qty : null;
+    const lineTotal = lineTotalChf != null ? `${fmtMoney(lineTotalChf)} ${currency}` : "-";
+
+    const imgUrl = it.image || "";
+    let imgSrc = "";
+    let imgHtml = "";
+
+    if (imgUrl) {
+      try {
+        const blob = UrlFetchApp.fetch(imgUrl).getBlob();
+        const cid = `item_${idx}`;
+        inlineImages[cid] = blob;
+        imgSrc = `cid:${cid}`;
+      } catch (e) {
+        console.log("Failed to fetch product image: " + imgUrl + " error: " + e);
+        imgSrc = imgUrl;
+      }
+
+      imgHtml = `<img src="${imgSrc}" alt="${escapeHtml(title)}"
+        width="72"
+        style="display:block;width:72px;max-width:72px;height:auto;border-radius:8px;border:1px solid #eee;" />`;
+    } else {
+      imgHtml = `<div style="width:72px;height:72px;border-radius:8px;background:#f5f5f5;border:1px solid #eee;"></div>`;
+    }
+
+    const sizeHtml = it.size ? `<div>Grösse: ${escapeHtml(it.size)}</div>` : "";
+    const colorHtml = it.color ? `<div>Farbe: ${escapeHtml(it.color)}</div>` : "";
+
+    return `
+      <tr>
+        <td width="90" style="padding:8px 10px;vertical-align:top;width:90px;">${imgHtml}</td>
+        <td style="padding:8px 10px;vertical-align:top;">
+          <div style="font-weight:600;">${escapeHtml(title)}</div>
+          <div style="font-size:12px;color:#555;">
+            <div>Menge: ${qty}</div>
+            ${sizeHtml}
+            ${colorHtml}
+          </div>
+        </td>
+        <td style="padding:8px 10px;vertical-align:top;text-align:right;font-size:12px;color:#555;white-space:nowrap;">
+          <div>Einzelpreis</div>
+          <div style="font-weight:600;">${price}</div>
+        </td>
+        <td style="padding:8px 10px;vertical-align:top;text-align:right;font-size:12px;color:#111;white-space:nowrap;">
+          <div>Zeilensumme</div>
+          <div style="font-weight:600;">${lineTotal}</div>
+        </td>
+      </tr>`;
+  }).join("");
+
+  const orderIdHtml = orderId
+    ? ` Bestellnummer <span style="font-weight:600;">#${escapeHtml(orderId)}</span>`
+    : "";
+
+  const bodyHtml = `
+<div style="background:#f3f4f6;padding:20px 0;">
+  <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;border:1px solid #e5e7eb;padding:20px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111;">
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e5e7eb;margin-bottom:14px;width:100%;">
+      <tr>
+        <td align="left" style="padding-bottom:10px;">
+          <div style="font-size:18px;font-weight:700;">${shopName} – Shop</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+            Bestellung${orderId ? " #" + escapeHtml(orderId) : ""}
+          </div>
+        </td>
+        <td align="right" style="padding-bottom:10px;white-space:nowrap;">
+          <img src="${inlineImages["logo"] ? "cid:logo" : logoUrl}"
+            alt="${escapeHtml(shopName)} Logo"
+            width="44" height="44"
+            style="height:44px;width:44px;max-width:44px;max-height:44px;border-radius:9999px;display:inline-block;" />
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 10px 0;">${escapeHtml(name)},</p>
+    <p style="margin:0 0 14px 0;">
+      vielen Dank für deine Bestellung${orderIdHtml} beim <strong>${shopName}</strong>!
+    </p>
+
+    <h3 style="font-size:15px;margin:12px 0 6px 0;">Bestellte Artikel</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;">
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+
+    <div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px;display:flex;justify-content:flex-end;">
+      <div style="text-align:right;font-size:14px;">
+        <div style="color:#6b7280;">Gesamtsumme</div>
+        <div style="font-size:18px;font-weight:700;">${total}</div>
+      </div>
+    </div>
+
+    <div style="margin-top:14px;font-size:13px;color:#374151;">
+      <p style="margin:0 0 6px 0;">${escapeHtml(pickup)}</p>
+      <p style="margin:0 0 6px 0;">${escapeHtml(contact)}</p>
+    </div>
+
+    <p style="margin:14px 0 0 0;font-size:12px;color:#9ca3af;">
+      Sportliche Grüsse<br>${shopName}
+    </p>
+
+  </div>
+</div>`;
+
+  console.log(bodyHtml)
+
+  try {
+    recordOrderInSheet({
+      orderId,
+      email,
+      kidzbike,
+      comments,
+      name,
+      totalNumber,
+      currency,
+      items
+    });
+  } catch (e) {
+    console.log("Failed to record order: " + e);
+  }
+
+  console.log(bodyText)
+
+  MailApp.sendEmail({
+    to: email,
+    bcc: "markus.blessing@bluewin.ch, julian.henning@thoemus.ch, oliver.staeheli@gmail.com, c.sailer@gmx.ch, daniel.laumer@gmail.com, dominik.callura@thoemus.ch",
+    subject,
+    body: bodyText,
+    htmlBody: bodyHtml,
+    name: shopName,
+    inlineImages: inlineImages
+  });
+}
+/**
+ * Append multiple rows: one row per ordered item.
+ * Sheet columns:
+ * Timestamp | Order ID | Name | Email | KidzBike | SKU | Title | Size | color | Qty | Unit Price | Line Total | Currency | isReturn | Image
+ */
+/**
+ * Append multiple rows: one row per ordered item.
+ * Sheet columns:
+ * Timestamp | Order ID | Name | Email | KidzBike | SKU | Title | Size | color | Qty | Unit Price | Line Total | Currency | isReturn | Image | Comments
+ */
+function recordOrderInSheet(data) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const SHEET_NAME2 = "Bestellungen";
+  let sheet = ss.getSheetByName(SHEET_NAME2);
+
+  if (!sheet) sheet = ss.insertSheet(SHEET_NAME2);
+
+  if (sheet.getLastRow() === 0) {
+    sheet.appendRow([
+      "Timestamp",
+      "Order ID",
+      "Name",
+      "Email",
+      "KidzBike",
+      "SKU",
+      "Title",
+      "Size",
+      "color",
+      "Qty",
+      "Unit Price (CHF)",
+      "Line Total (CHF)",
+      "Currency",
+      "isReturn",
+      "Image URL",
+      "Comments" // ✅ new column at the end
+    ]);
+  }
+
+  const currency = data.currency || "";
+  const items = data.items || [];
+  const comments = data.comments || ""; // ✅ once per order, repeated on each item row
+
+  items.forEach(item => {
+    const sku = item.sku || "";
+    const title = item.title || "";
+    const size = item.size || "";
+    const color = item.color || "";
+    const qty = item.qty || 0;
+    const price = item.unit_amount / 100 || 0;
+    const lineTotal = price * qty;
+    const image = item.image || "";
+    const isReturn = item.isReturn || "";
+
+    sheet.appendRow([
+      new Date(),
+      data.orderId || "",
+      data.name || "",
+      data.email || "",
+      data.kidzbike,
+      sku,
+      title,
+      size,
+      color,
+      qty,
+      price,
+      lineTotal,
+      currency,
+      isReturn,
+      image,
+      data.comments // ✅ saved in sheet, not used in email
+    ]);
+  });
+}
+
+
+
+// ---------- Helpers ----------
+function isBlocked_(v) {
+  if (v == null) return false;
+  const s = String(v).trim().toUpperCase();
+  return s === "X" || s === "✗";
+}
+
+// empty -> null, number-like -> number, everything else -> null
+function parseStockCell_(v) {
+  if (v === "" || v == null) return null;
+  if (isBlocked_(v)) return null;
+  const n = Number(String(v).replace(",", "."));
+  return isNaN(n) ? null : n;
+}
+
+function parseImageList_(raw) {
+  if (raw == null) return [];
+  let inner = String(raw).trim();
+
+  if (/^\s*\[.*\]\s*$/.test(inner)) {
+    inner = inner.replace(/^\s*\[/, '').replace(/\]\s*$/, '');
+  }
+
+  const urls = inner.match(/https?:\/\/[^\s,\];)"]+/g) || [];
+  const seen = new Set();
+  const out = [];
+  for (const u of urls) {
+    const t = u.trim().replace(/^['"]|['"]$/g, '');
+    if (t && !seen.has(t)) { seen.add(t); out.push(t); }
+  }
+  return out;
+}
+
+function normalizeRow_(r, ci) {
+  const sizes = {};
+  for (const key of Object.keys(ci.size)) {
+    const idx = ci.size[key];
+    if (idx >= 0) sizes[key] = r[idx];
+  }
+
+  const rawList = ci.images >= 0 ? r[ci.images] : '';
+  const rawSingleOrList = ci.img >= 0 ? r[ci.img] : '';
+
+  let images = parseImageList_(rawList);
+  if (!images.length) images = parseImageList_(rawSingleOrList);
+  if (!images.length) {
+    const s = String(rawSingleOrList || '').trim().replace(/^['"]|['"]$/g, '');
+    if (/^https?:\/\//i.test(s)) images = [s];
+  }
+
+  const imageUrl = images[0] || '';
+
+  return {
+    handle: ci.handle >= 0 ? String(r[ci.handle] || '') : '',
+    sku: ci.sku >= 0 ? String(r[ci.sku] || '') : '',
+    name: ci.name >= 0 ? String(r[ci.name] || '') : '',
+    price: ci.price >= 0 ? num(r[ci.price]) : 0,
+    category: ci.category >= 0 ? String(r[ci.category] || '') : '',
+    mainCategory: ci.mainCategory >= 0 ? String(r[ci.mainCategory] || '') : '',
+    description: ci.description >= 0 ? String(r[ci.description] || '') : '',
+    justStock: ci.justStock >= 0 ? String(r[ci.justStock] || '') : '',
+    colorName: ci.colorName >= 0 ? String(r[ci.colorName] || '') : '',
+    colorCode: ci.colorCode >= 0 ? String(r[ci.colorCode] || '') : '',
+    isReturn: ci.isReturn >= 0 ? String(r[ci.isReturn] || '') : '',
+    image3d: ci.image3d >= 0 ? String(r[ci.image3d] || '') : '',
+    images,
+    imageUrl,
+    sizes
+  };
+}
+
+function readSheet_() {
+  const sh = SHEET_NAME
+    ? SpreadsheetApp.getActive().getSheetByName(SHEET_NAME)
+    : SpreadsheetApp.getActiveSheet();
+  if (!sh) throw new Error('Sheet not found');
+
+  const guessMax = Math.min(10, sh.getLastRow());
+  const lastCol = sh.getLastColumn();
+  let headRow = 1;
+  let head = null;
+
+  for (let r = 1; r <= guessMax; r++) {
+    const rowVals = sh.getRange(r, 1, 1, lastCol).getValues()[0];
+    const norm = rowVals.map(nrm);
+    const hasSku = norm.some(v => v === 'ARTIKEL-NR.' || v === 'ARTIKEL NR.' || v === 'ARTIKEL-NR' || v === 'SKU' || v === 'BESTELLNUMMER');
+    const hasName = norm.some(v => v === 'ARTIKEL' || v === 'NAME' || v === 'PRODUKT' || v === 'TITLE');
+    if (hasSku && hasName) { headRow = r; head = rowVals; break; }
+  }
+  if (!head) { headRow = 5; head = sh.getRange(headRow, 1, 1, lastCol).getValues()[0]; }
+
+  const values = sh.getRange(headRow, 1, sh.getLastRow() - headRow + 1, lastCol).getValues();
+  const rows = values.slice(1);
+  const normMap = head.reduce((m, v, i) => { m[nrm(v)] = i; return m; }, {});
+  return { sh, headRow, head, rows, normMap };
+}
+
+function cols_(head, normMap) {
+  const idx = (labels) => {
+    const arr = Array.isArray(labels) ? labels : [labels];
+    for (const lab of arr) {
+      const i = normMap[nrm(lab)];
+      if (i != null) return i;
+    }
+    return -1;
+  };
+
+  const sku = idx(['Artikel-Nr.', 'Artikel Nr.', 'Artikel-Nr', 'SKU', 'Bestellnummer']);
+  const handle = idx(['Handle', 'Produkt-Handle', 'Handle ID']);
+  const name = idx(['Artikel', 'Name', 'Produkt', 'Title']);
+  const price = idx(['Bestellpreis', 'Price', 'Preis']);
+  const category = idx(['Kategorie', 'Category']);
+  const mainCategory = idx(['Rubrik']);
+  const description = idx(['Description', 'Beschreibung']);
+  const justStock = idx(['justStock']);
+  const img = idx(['URL Artikelbild', 'Bild URL', 'Bild', 'Image URL']);
+  const image3d = idx(['3D Bild', '3D Image']);
+  const images = idx(['Bilder', 'Images', 'Gallerie', 'Gallery']);
+  const colorName = idx(['Farbe', 'Color', 'Farben']);
+  const colorCode = idx(['Farbcode', 'Color Code', 'Hex']);
+  const isReturn = idx(['return', 'Rückgabe', 'isReturn']);
+
+  const reserved = new Set([
+    nrm('Artikel-Nr.'), nrm('Artikel Nr.'), nrm('Artikel-Nr'), nrm('SKU'), nrm('Bestellnummer'),
+    nrm('Handle'), nrm('Produkt-Handle'), nrm('Handle ID'),
+    nrm('Artikel'), nrm('Name'), nrm('Produkt'), nrm('Title'),
+    nrm('Bestellpreis'), nrm('Price'),
+    nrm('Kategorie'), nrm('Category'),
+    nrm('Rubrik'),
+    nrm('Description'), nrm('Beschreibung'),
+    nrm('justStock'),
+    nrm('URL Artikelbild'), nrm('Bild URL'), nrm('Bild'), nrm('Image URL'),
+    nrm('3D Bild'), nrm('3D Image'),
+    nrm('Bilder'), nrm('Images'), nrm('Gallerie'), nrm('Gallery'),
+    nrm('Farbe'), nrm('Color'), nrm('Farben'),
+    nrm('Farbcode'), nrm('Color Code'), nrm('Hex'),
+    nrm('return'), nrm('Rückgabe'), nrm('isReturn'),
+    nrm('Total Lagerbestand'), nrm('Total'), nrm('Gesamt'), nrm('Gesamtbestand'), nrm('Summe')
+  ]);
+
+  const size = {};
+  const sizeOrder = [];
+
+  const textile = /^(ONESIZE|XXS|XS|S|M|L|XL|XXL|3XL|4XL|5XL)$/i;
+  const numeric = /^\d{2,3}(\.\d)?$/;           // 34, 46, 104, 42.5
+  const range = /^\d{2,3}\s*-\s*\d{2,3}$/;      // 46-48
+  const prefixed = /^(SIZE|GRÖSSE|GROESSE)\s*[:\-]\s*(.+)$/i;
+  const slash = /^\d{1,3}\s*\/\s*\d{1,3}(?:\s*(?:JAHRE|YEAR|YEARS))?$/i;
+
+  for (let i = 0; i < head.length; i++) {
+    const raw = head[i];
+    const H = nrm(raw);
+    if (!H) continue;
+    if (reserved.has(H)) continue;
+
+    let key = H;
+
+    const pm = String(raw || '').trim().match(prefixed);
+    if (pm && pm[2]) key = nrm(pm[2]);
+
+    if (SIZE_ALIASES[key]) key = SIZE_ALIASES[key];
+
+    const ok =
+      textile.test(key) ||
+      numeric.test(key.replace(",", ".")) ||
+      range.test(key) ||
+      slash.test(key);
+
+
+    if (!ok) continue;
+
+    size[key] = i;
+    sizeOrder.push(key);
+  }
+
+  if (sku < 0 || name < 0) throw new Error('Could not locate essential headers (Artikel-Nr., Artikel)');
+
+  return {
+    sku, handle, name, price, category, mainCategory, description, justStock, image3d, img, images, colorName, colorCode, isReturn,
+    size,
+    sizeOrder,
+    total: idx(['Total Lagerbestand', 'Total', 'Gesamt', 'Gesamtbestand', 'Summe'])
+  };
+}
+
+function nrm(v) {
+  if (v == null) return '';
+  return String(v).replace(/\r?\n/g, ' ').replace(/\s+/g, ' ').trim().toUpperCase();
+}
+function num(v) { return isNaN(Number(v)) ? 0 : Number(v); }
+
+function json(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+function bad(msg) { return json({ ok: false, error: msg }); }
+function forbidden(msg) { return json({ ok: false, error: msg, code: 403 }); }
+
+// Debug helper
+function debugHeaders() {
+  const { sh, headRow, head } = readSheet_();
+  return { ok: true, sheet: sh.getName(), headerRow: headRow, headers: head, normalized: head.map(nrm) };
+}
+
+// Kleiner HTML-Escaper für die HTML-Mail
+function escapeHtml(s) {
+  return String(s)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+// ---------- RESEND EMAIL (same as sendOrderEmail, but WITHOUT recordOrderInSheet) ----------
+function resendOrderEmail(order) {
+  let email = order?.email;
+  if (!email) return;
+
+  const shopName = "Velo Club Horgen";
+  const logoUrl =
+    "https://www.veloclub-horgen.ch/clubdesk/fileservlet?type=image&id=1000962&s=djEtuF-WHA9ki0P_HckwukZ6Ly4VbgyocWRDbswQV7sPSRY=&imageFormat=_512x512";
+
+  const orderId = order?.orderId ? String(order.orderId) : "";
+  const currency = order?.currency ? String(order.currency) : "CHF";
+
+  const fmtMoney = (val) => {
+    if (typeof val !== "number" || isNaN(val)) return "-";
+    return val.toFixed(2).replace(".", ",");
+  };
+
+  const items = Array.isArray(order?.items) ? order.items : [];
+
+  const linesText = items.map((it) => {
+    const title = it.title || it.sku || "Artikel";
+    const size = it.size ? ` (${it.size})` : "";
+    const color = it.color ? `, Farbe: ${it.color}` : "";
+    const qty = it.qty ?? 1;
+    const unitChf = it.unit_amount != null ? it.unit_amount / 100 : null;
+    const price = unitChf != null ? `${fmtMoney(unitChf)} ${currency}` : "-";
+    const lineTotalChf = unitChf != null ? unitChf * qty : null;
+    const lineTotal = lineTotalChf != null ? `${fmtMoney(lineTotalChf)} ${currency}` : "-";
+    return `• ${title}${size}${color} × ${qty} — Einzelpreis: ${price}, Zeilensumme: ${lineTotal}`;
+  });
+
+  const totalNumber =
+    typeof order?.total === "number"
+      ? order.total
+      : items.reduce((sum, it) => {
+        const qty = it.qty || 0;
+        const unitChf = it.unit_amount != null ? it.unit_amount / 100 : 0;
+        return sum + unitChf * qty;
+      }, 0);
+
+  const total = `${fmtMoney(totalNumber)} ${currency}`;
+
+  const name = order?.name || "Liebe*r Kunde*in";
+  const pickup = order?.pickupNote || "Die Abholung erfolgt bei Thömus Bike World in Au-Wädenswil.";
+  const contact = order?.contactNote || "Bei Fragen antworte einfach auf diese E-Mail.";
+  const subject = orderId
+    ? `Bestellbestätigung #${orderId} – ${shopName}`
+    : `Bestellbestätigung – ${shopName}`;
+
+  const bodyText = `${name},
+
+vielen Dank für deine Bestellung${orderId ? " #" + orderId : ""} beim ${shopName}!
+
+Bestellte Artikel:
+${linesText.join("\n")}
+
+Gesamtsumme: ${total}
+
+${comments ? `Kommentare:\n${comments}\n\n` : ""}
+${pickup}
+${contact}
+
+Sportliche Grüsse
+${shopName}
+`;
+
+  const inlineImages = {};
+  try {
+    const logoBlob = UrlFetchApp.fetch(logoUrl).getBlob();
+    inlineImages["logo"] = logoBlob;
+  } catch (e) {
+    console.log("Failed to fetch logo: " + e);
+  }
+
+  const rowsHtml = items
+    .map((it, idx) => {
+      const title = it.title || it.sku || "Artikel";
+      const qty = it.qty ?? 1;
+
+      const unitChf = it.unit_amount != null ? it.unit_amount / 100 : null;
+      const price = unitChf != null ? `${fmtMoney(unitChf)} ${currency}` : "-";
+      const lineTotalChf = unitChf != null ? unitChf * qty : null;
+      const lineTotal = lineTotalChf != null ? `${fmtMoney(lineTotalChf)} ${currency}` : "-";
+
+      const imgUrl = it.image || "";
+      let imgSrc = "";
+      let imgHtml = "";
+
+      if (imgUrl) {
+        try {
+          const blob = UrlFetchApp.fetch(imgUrl).getBlob();
+          const cid = `item_${idx}`;
+          inlineImages[cid] = blob;
+          imgSrc = `cid:${cid}`;
+        } catch (e) {
+          console.log("Failed to fetch product image: " + imgUrl + " error: " + e);
+          imgSrc = imgUrl;
+        }
+
+        imgHtml = `<img src="${imgSrc}" alt="${escapeHtml(title)}"
+          width="72"
+          style="display:block;width:72px;max-width:72px;height:auto;border-radius:8px;border:1px solid #eee;" />`;
+      } else {
+        imgHtml = `<div style="width:72px;height:72px;border-radius:8px;background:#f5f5f5;border:1px solid #eee;"></div>`;
+      }
+
+      const sizeHtml = it.size ? `<div>Grösse: ${escapeHtml(it.size)}</div>` : "";
+      const colorHtml = it.color ? `<div>Farbe: ${escapeHtml(it.color)}</div>` : "";
+
+      return `
+        <tr>
+          <td width="90" style="padding:8px 10px;vertical-align:top;width:90px;">${imgHtml}</td>
+          <td style="padding:8px 10px;vertical-align:top;">
+            <div style="font-weight:600;">${escapeHtml(title)}</div>
+            <div style="font-size:12px;color:#555;">
+              <div>Menge: ${qty}</div>
+              ${sizeHtml}
+              ${colorHtml}
+            </div>
+          </td>
+          <td style="padding:8px 10px;vertical-align:top;text-align:right;font-size:12px;color:#555;white-space:nowrap;">
+            <div>Einzelpreis</div>
+            <div style="font-weight:600;">${price}</div>
+          </td>
+          <td style="padding:8px 10px;vertical-align:top;text-align:right;font-size:12px;color:#111;white-space:nowrap;">
+            <div>Zeilensumme</div>
+            <div style="font-weight:600;">${lineTotal}</div>
+          </td>
+        </tr>`;
+    })
+    .join("");
+
+  const orderIdHtml = orderId
+    ? ` Bestellnummer <span style="font-weight:600;">#${escapeHtml(orderId)}</span>`
+    : "";
+
+  const bodyHtml = `
+<div style="background:#f3f4f6;padding:20px 0;">
+  <div style="max-width:640px;margin:0 auto;background:#ffffff;border-radius:14px;border:1px solid #e5e7eb;padding:20px;font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;line-height:1.5;color:#111;">
+
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-bottom:1px solid #e5e7eb;margin-bottom:14px;width:100%;">
+      <tr>
+        <td align="left" style="padding-bottom:10px;">
+          <div style="font-size:18px;font-weight:700;">${shopName} – Shop</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:2px;">
+            Bestellung${orderId ? " #" + escapeHtml(orderId) : ""}
+          </div>
+        </td>
+        <td align="right" style="padding-bottom:10px;white-space:nowrap;">
+          <img src="${inlineImages["logo"] ? "cid:logo" : logoUrl}"
+            alt="${escapeHtml(shopName)} Logo"
+            width="44" height="44"
+            style="height:44px;width:44px;max-width:44px;max-height:44px;border-radius:9999px;display:inline-block;" />
+        </td>
+      </tr>
+    </table>
+
+    <p style="margin:0 0 10px 0;">${escapeHtml(name)},</p>
+    <p style="margin:0 0 14px 0;">
+      vielen Dank für deine Bestellung${orderIdHtml} beim <strong>${shopName}</strong>!
+    </p>
+
+    <h3 style="font-size:15px;margin:12px 0 6px 0;">Bestellte Artikel</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;">
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+
+    <div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px;display:flex;justify-content:flex-end;">
+      <div style="text-align:right;font-size:14px;">
+        <div style="color:#6b7280;">Gesamtsumme</div>
+        <div style="font-size:18px;font-weight:700;">${total}</div>
+      </div>
+    </div>
+
+${comments ? `
+  <div style="margin-top:14px;padding:12px;border-radius:10px;background:#f9fafb;border:1px solid #e5e7eb;">
+    <div style="font-size:13px;font-weight:600;margin-bottom:4px;">Kommentare</div>
+    <div style="font-size:13px;color:#374151;white-space:pre-wrap;">
+      ${escapeHtml(comments)}
+    </div>
+  </div>
+` : ""}
+    <div style="margin-top:14px;font-size:13px;color:#374151;">
+      <p style="margin:0 0 6px 0;">${escapeHtml(pickup)}</p>
+      <p style="margin:0 0 6px 0;">${escapeHtml(contact)}</p>
+    </div>
+
+    <p style="margin:14px 0 0 0;font-size:12px;color:#9ca3af;">
+      Sportliche Grüsse<br>${shopName}
+    </p>
+
+  </div>
+</div>`;
+
+  MailApp.sendEmail({
+    to: email,
+    bcc:
+      "markus.blessing@bluewin.ch, julian.henning@thoemus.ch, robert.leutenegger@swissonline.ch, c.sailer@gmx.ch, daniel.laumer@gmail.com, dominik.callura@thoemus.ch",
+    subject,
+    body: bodyText,
+    htmlBody: bodyHtml,
+    name: shopName,
+    inlineImages: inlineImages,
+  });
+}
+
+// ---------- HARD-CODED MISSING ORDERS ----------
+function resendMissingOrdersHardcoded() {
+  const DRY_RUN = false; // set true to only log, not send
+
+  const orders = [
+    {
+      "orderId": "1769796259122",
+      "name": "Daniel Züst",
+      "email": "dzuest@gmx.ch",
+      "kidzbike": false,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 0.0,
+      "items": [
+        {
+          "sku": "20107",
+          "title": "Thömus Bibshort Team Pro men (Gratis gegen Rückgabe)",
+          "size": "M",
+          "color": "pink",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/Bibshort%20Team%20Pro%20pink%20Front.png",
+          "isReturn": true
+        }
+      ]
+    },
+    {
+      "orderId": "1769870082875",
+      "name": "Christa Hess",
+      "email": "christahess78@gmail.com",
+      "kidzbike": false,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 51.0,
+      "items": [
+        {
+          "sku": "20127",
+          "title": "Thömus SS Jersey Team Pro Kids (Gratis gegen Rückgabe)",
+          "size": "10/11 JAHRE",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS Jersey Team Pro Kids Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20128",
+          "title": "Thömus Bibshort Kids",
+          "size": "10/11 JAHRE",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 5100,
+          "image": "https://webshop-veloclubhorgen.ch/images/Bibshort Kids Front.png",
+          "isReturn": false
+        }
+      ]
+    },
+    {
+      "orderId": "1769871656379",
+      "name": "Christian und Robin Sailer",
+      "email": "cocoundchrigi@googlemail.com",
+      "kidzbike": false,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 141.0,
+      "items": [
+        {
+          "sku": "20101",
+          "title": "Thömus SS Jersey Race Pro men (Gratis gegen Rückgabe)",
+          "size": "S",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS Jersey Race Pro yellow Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20102",
+          "title": "Thömus Bibshort Team Pro men (Gratis gegen Rückgabe)",
+          "size": "S",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/Bibshort Team yellow Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20103",
+          "title": "Thömus Longsleeve Jersey Team Pro men",
+          "size": "S",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 10000,
+          "image": "",
+          "isReturn": false
+        },
+        {
+          "sku": "20127",
+          "title": "Thömus SS Jersey Team Pro Kids (Gratis gegen Rückgabe)",
+          "size": "12/13 JAHRE",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS Jersey Team Pro Kids Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20133",
+          "title": "Thömus AM Trail Jersey S/S Team Pro Kids",
+          "size": "10/11 JAHRE",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 4100,
+          "image": "",
+          "isReturn": false
+        }
+      ]
+    },
+    {
+      "orderId": "1769873633010",
+      "name": "Aleksander Pabian",
+      "email": "jo.poreba@gmail.com",
+      "kidzbike": false,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 57.0,
+      "items": [
+        {
+          "sku": "20127",
+          "title": "Thömus SS Jersey Team Pro Kids (Gratis gegen Rückgabe)",
+          "size": "6/7 JAHRE",
+          "color": "yellow",
+          "qty": 2,
+          "unit_amount": 5700,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS Jersey Team Pro Kids Front.png",
+          "isReturn": true
+        }
+      ]
+    },
+    {
+      "orderId": "1769877141274",
+      "name": "Grenacher Patrizia",
+      "email": "patrizia.grenacher@bluewin.ch",
+      "kidzbike": false,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 41.0,
+      "items": [
+        {
+          "sku": "20133",
+          "title": "Thömus AM Trail Jersey S/S Team Pro Kids",
+          "size": "8/9 JAHRE",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 4100,
+          "image": "",
+          "isReturn": false
+        }
+      ]
+    },
+    {
+      "orderId": "1769878369627",
+      "name": "Markus Blessing",
+      "email": "markus.blessing@bluewin.ch",
+      "kidzbike": false,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 0.0,
+      "items": [
+        {
+          "sku": "20101",
+          "title": "Thömus SS Jersey Race Pro men (Gratis gegen Rückgabe)",
+          "size": "XS",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS%20Jersey%20Race%20Pro%20yellow%20Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20102",
+          "title": "Thömus Bibshort Team Pro men (Gratis gegen Rückgabe)",
+          "size": "XS",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/Bibshort%20Team%20yellow%20Front.png",
+          "isReturn": true
+        }
+      ]
+    },
+    {
+      "orderId": "1769878444196",
+      "name": "Thomas Kirchmair",
+      "email": "tkirchmair1077@gmail.com",
+      "kidzbike": true,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 0.0,
+      "items": [
+        {
+          "sku": "20101",
+          "title": "Thömus SS Jersey Race Pro men (Gratis gegen Rückgabe)",
+          "size": "L",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS%20Jersey%20Race%20Pro%20yellow%20Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20102",
+          "title": "Thömus Bibshort Team Pro men (Gratis gegen Rückgabe)",
+          "size": "XL",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/Bibshort%20Team%20yellow%20Front.png",
+          "isReturn": true
+        }
+      ]
+    },
+    {
+      "orderId": "1769883737155",
+      "name": "Beer Fredi",
+      "email": "fredi.beer@bluewin.ch",
+      "kidzbike": true,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 0.0,
+      "items": [
+        {
+          "sku": "20101",
+          "title": "Thömus SS Jersey Race Pro men (Gratis gegen Rückgabe)",
+          "size": "3XL",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS%20Jersey%20Race%20Pro%20yellow%20Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20132",
+          "title": "Thömus Baggy Trail Pro Pant ohne Polster unisex (Gratis gegen Rückgabe)",
+          "size": "XXL",
+          "color": "black",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "",
+          "isReturn": true
+        }
+      ]
+    },
+    {
+      "orderId": "1769883808953",
+      "name": "Lorenz Stephanie",
+      "email": "stephi.cirrus@bluewin.ch",
+      "kidzbike": true,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 0.0,
+      "items": [
+        {
+          "sku": "20111",
+          "title": "Thömus SS Jersey Race Pro women (Gratis gegen Rückgabe)",
+          "size": "M",
+          "color": "pink",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS%20Jersey%20Race%20Pro%20Pink%20Front.png",
+          "isReturn": true
+        },
+        {
+          "sku": "20113",
+          "title": "Thömus Short Team Pro women (Gratis gegen Rückgabe)",
+          "size": "M",
+          "color": "pink",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/Short%20Team%20Pro%20women%20pink%20Front.png",
+          "isReturn": true
+        }
+      ]
+    },
+    {
+      "orderId": "1769891828051",
+      "name": "Ceri Edmonds",
+      "email": "cerigriffith@hotmail.com",
+      "kidzbike": false,
+      "comments": "",
+      "currency": "CHF",
+      "totalNumber": 0.0,
+      "items": [
+        {
+          "sku": "20127",
+          "title": "Thömus SS Jersey Team Pro Kids (Gratis gegen Rückgabe)",
+          "size": "12/13 JAHRE",
+          "color": "yellow",
+          "qty": 1,
+          "unit_amount": 0,
+          "image": "https://webshop-veloclubhorgen.ch/images/SS%20Jersey%20Team%20Pro%20Kids%20Front.png",
+          "isReturn": true
+        }
+      ]
+    }
+  ];
+
+  for (const o of orders) {
+    try {
+      if (DRY_RUN) {
+        console.log("DRY_RUN would send:", o.orderId, o.email, (o.items || []).length);
+      } else {
+        resendOrderEmail(o);
+        console.log("Sent:", o.orderId, o.email);
+        Utilities.sleep(700); // small throttle to be safe
+      }
+    } catch (e) {
+      console.log("FAILED:", o.orderId, o.email, e);
+    }
+  }
+
+  return "done";
+}
+
