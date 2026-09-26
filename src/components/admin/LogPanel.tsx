@@ -15,6 +15,7 @@ const DOT_COLORS: Record<EnrichedLog["kind"], string> = {
   // "real" ready/pickup events they're undoing.
   ready_undo: "hsl(220 13% 55%)",
   pickup_undo: "hsl(220 13% 55%)",
+  exchange: "hsl(258 60% 55%)",
 };
 
 interface LogPanelProps {
@@ -35,6 +36,7 @@ export const LogPanel = ({ logs, onSelectOrder, activeKind, onKindChange }: LogP
     cancel: t("adminKindCancel"),
     ready_undo: t("adminKindReadyUndo"),
     pickup_undo: t("adminKindPickupUndo"),
+    exchange: t("adminKindExchange"),
   };
 
   const kindFilters: LogKindFilter[] = [
@@ -45,6 +47,7 @@ export const LogPanel = ({ logs, onSelectOrder, activeKind, onKindChange }: LogP
     "cancel",
     "ready_undo",
     "pickup_undo",
+    "exchange",
   ];
 
   const visible = logs.slice(0, 40);

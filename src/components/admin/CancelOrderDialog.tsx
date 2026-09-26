@@ -1,45 +1,32 @@
 import { AlertTriangle } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useTranslation } from "@/hooks/useTranslation";
+import { fmtMoney } from "@/lib/adminFormat";
 import { EnrichedOrder } from "@/types/admin";
 
 interface CancelOrderDialogProps {
   order: EnrichedOrder | null;
   note: string;
   onNoteChange: (note: string) => void;
-  // CHF, string so the input can hold an in-progress/empty value while typing.
-  refundAmount: string;
-  onRefundAmountChange: (amount: string) => void;
   onClose: () => void;
   onConfirm: () => void;
   submitting: boolean;
 }
 
-export const CancelOrderDialog = ({
-  order,
-  note,
-  onNoteChange,
-  refundAmount,
-  onRefundAmountChange,
-  onClose,
-  onConfirm,
-  submitting,
-}: CancelOrderDialogProps) => {
+export const CancelOrderDialog = ({ order, note, onNoteChange, onClose, onConfirm, submitting }: CancelOrderDialogProps) => {
   const { t } = useTranslation();
 
   if (!order) return null;
 
   // Only real Zahls payments have anything to refund - legacy (Excel-
   // imported) and free/promo orders never went through Zahls at all, so
-  // there's no transaction to refund and the amount field doesn't apply.
+  // there's no transaction to refund and this section doesn't apply. The
+  // refund amount itself is never staff-editable - it always equals exactly
+  // what was actually charged (order.amount_paid), never a custom figure.
   const hasRefundablePayment = order.payment_provider === "zahls";
   const amountPaid = order.amount_paid || 0;
-  const parsedAmount = Number(refundAmount);
-  const amountValid =
-    !hasRefundablePayment || (isFinite(parsedAmount) && parsedAmount > 0 && parsedAmount <= amountPaid + 0.005);
 
   return (
     <Dialog open={!!order} onOpenChange={(o) => !o && onClose()}>
@@ -64,18 +51,7 @@ export const CancelOrderDialog = ({
             <label className="text-[hsl(220_13%_55%)] text-[11.5px] mb-1 block">
               {t("adminRefundAmountLabel")}
             </label>
-            <Input
-              type="number"
-              step="0.01"
-              min="0"
-              max={amountPaid}
-              value={refundAmount}
-              onChange={(e) => onRefundAmountChange(e.target.value)}
-              className="text-[13.5px]"
-            />
-            <div className="text-[11.5px] text-[hsl(220_13%_55%)] mt-1">
-              {t("adminRefundAmountHint")} {amountPaid.toFixed(2)} CHF
-            </div>
+            <div className="text-[13.5px] font-semibold">{fmtMoney(amountPaid)}</div>
           </div>
         ) : (
           <div className="text-[12px] text-[hsl(220_13%_55%)] italic mt-2">{t("adminRefundNoPayment")}</div>
@@ -90,12 +66,7 @@ export const CancelOrderDialog = ({
           <Button type="button" variant="outline" onClick={onClose} disabled={submitting}>
             {t("adminCancel")}
           </Button>
-          <Button
-            type="button"
-            variant="destructive"
-            disabled={!amountValid || submitting}
-            onClick={onConfirm}
-          >
+          <Button type="button" variant="destructive" disabled={submitting} onClick={onConfirm}>
             {t("adminConfirmCancelOrder")}
           </Button>
         </div>

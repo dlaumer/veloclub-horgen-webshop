@@ -69,3 +69,36 @@ export function inRange(
 
   return true;
 }
+
+function ymd(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/** Filename-safe label for the currently active order date range - mirrors
+ * inRange's own boundaries above so the label always matches what's
+ * actually included, e.g. "2026-09-19_bis_2026-09-25" for "week" or
+ * "alle" for "all". Used to name the orders Excel export after whatever
+ * period is filtered, instead of just today's date. */
+export function rangeFilenameLabel(mode: RangeMode, now: Date, customFrom?: string, customTo?: string): string {
+  if (mode === "all") return "alle";
+
+  if (mode === "today") return ymd(now);
+
+  if (mode === "week") {
+    const end = startOfDay(now);
+    const start = new Date(end.getTime() - 6 * 86400000);
+    return `${ymd(start)}_bis_${ymd(end)}`;
+  }
+
+  if (mode === "month") {
+    const start = new Date(now.getFullYear(), now.getMonth(), 1);
+    return `${ymd(start)}_bis_${ymd(now)}`;
+  }
+
+  // custom
+  if (customFrom && customTo) return `${customFrom}_bis_${customTo}`;
+  if (customFrom) return `ab_${customFrom}`;
+  if (customTo) return `bis_${customTo}`;
+  return "alle";
+}

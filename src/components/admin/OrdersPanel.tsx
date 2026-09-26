@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Calendar, StickyNote } from "lucide-react";
+import { Calendar, StickyNote, Download } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { fmtDateTime, fmtMoney, RangeMode } from "@/lib/adminFormat";
@@ -16,6 +16,7 @@ interface OrdersPanelProps {
     costPrice: number;
     costPricePaid: number;
     notCollected: number;
+    readyNotPicked: number;
   };
   rangeMode: RangeMode;
   onRangeModeChange: (mode: RangeMode) => void;
@@ -24,6 +25,7 @@ interface OrdersPanelProps {
   onCustomFrom: (v: string) => void;
   onCustomTo: (v: string) => void;
   onSelectOrder: (id: string) => void;
+  onExport: () => void;
 }
 
 export const OrdersPanel = ({
@@ -36,6 +38,7 @@ export const OrdersPanel = ({
   onCustomFrom,
   onCustomTo,
   onSelectOrder,
+  onExport,
 }: OrdersPanelProps) => {
   const { t } = useTranslation();
   const { language } = useLanguage();
@@ -71,7 +74,18 @@ export const OrdersPanel = ({
   return (
     <div className="bg-white border border-[hsl(220_13%_90%)] rounded-2xl p-3.5 sm:p-6 flex flex-col gap-3.5 sm:gap-5 h-full min-h-0 overflow-hidden">
       <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-2 sm:gap-3 shrink-0">
-        <h2 className="m-0 text-[15px] sm:text-[17px] font-semibold">{t("adminOrdersTitle")}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="m-0 text-[15px] sm:text-[17px] font-semibold">{t("adminOrdersTitle")}</h2>
+          <button
+            type="button"
+            onClick={onExport}
+            title={t("adminDownloadExcel")}
+            aria-label={t("adminDownloadExcel")}
+            className="flex items-center justify-center w-7 h-7 rounded-md text-[hsl(220_13%_45%)] hover:bg-[hsl(210_30%_95%)] shrink-0"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
         <div className="flex gap-1.5 items-center flex-wrap">
           {presets.map((p) => (
             <button key={p.mode} onClick={() => onRangeModeChange(p.mode)} className={presetBtn(rangeMode === p.mode)}>
@@ -138,75 +152,69 @@ export const OrdersPanel = ({
         </div>
       </div>
 
-      {/* Stats - money actually received is the number staff cares about
-          most, so it's highlighted in its own box on the left; the rest
-          follow as label-over-value cards. Every card sizes itself to its
-          own content (no truncate/fixed grid track) and the row wraps onto
-          more lines on narrow screens instead of ever clipping a number. */}
-      <div className="flex flex-wrap gap-2 sm:gap-2.5 items-stretch shrink-0">
-        <div
-          className="shrink-0 bg-[hsl(150_45%_95%)] border border-[hsl(150_35%_85%)] rounded-lg px-4 sm:px-5 py-2 flex flex-col justify-center gap-0.5"
-          title={`${t("adminStatReceived")}: ${fmtMoney(stats.received)}`}
-        >
-          <span className="text-[11px] sm:text-xs font-medium text-[hsl(150_35%_28%)] whitespace-nowrap">
-            {t("adminStatReceived")}
-          </span>
-          <span className="text-lg sm:text-2xl font-bold leading-tight text-[hsl(150_45%_16%)] whitespace-nowrap">
-            {fmtMoney(stats.received)}
-          </span>
+      {/* Stats - two explicit full-width rows (never 3+ lines): money
+          figures on line 1, order counts on line 2. Every card is flex-1 so
+          the row always stretches to use the full available width, on any
+          screen size - labels/values wrap onto a second line within their
+          own card rather than ever being cut off. */}
+      <div className="flex flex-col gap-1.5 shrink-0">
+        <div className="flex gap-1.5 sm:gap-2.5 items-stretch">
+          <div
+            className="flex-1 min-w-0 bg-[hsl(150_45%_95%)] border border-[hsl(150_35%_85%)] rounded-lg px-2 sm:px-5 py-1.5 sm:py-2 flex flex-col justify-center gap-0.5"
+            title={`${t("adminStatReceived")}: ${fmtMoney(stats.received)}`}
+          >
+            <span className="text-[9px] sm:text-xs font-medium text-[hsl(150_35%_28%)]">
+              {t("adminStatReceived")}
+            </span>
+            <span className="text-xs sm:text-2xl font-bold leading-tight text-[hsl(150_45%_16%)]">
+              {fmtMoney(stats.received)}
+            </span>
+          </div>
+          <div
+            className="flex-1 min-w-0 bg-[hsl(210_30%_97%)] rounded-lg px-2 sm:px-3.5 py-1.5 sm:py-2 flex flex-col justify-center gap-0.5"
+            title={`${t("adminStatRevenue")}: ${fmtMoney(stats.revenue)}`}
+          >
+            <span className="text-[9px] sm:text-xs text-[hsl(220_13%_55%)]">{t("adminStatRevenue")}</span>
+            <span className="text-xs sm:text-lg font-semibold">{fmtMoney(stats.revenue)}</span>
+          </div>
+          <div
+            className="flex-1 min-w-0 bg-[hsl(210_30%_97%)] rounded-lg px-2 sm:px-3.5 py-1.5 sm:py-2 flex flex-col justify-center gap-0.5"
+            title={`${t("adminStatCostPrice")}: ${fmtMoney(stats.costPrice)}`}
+          >
+            <span className="text-[9px] sm:text-xs text-[hsl(220_13%_55%)]">{t("adminStatCostPrice")}</span>
+            <span className="text-xs sm:text-lg font-semibold">{fmtMoney(stats.costPrice)}</span>
+          </div>
+          <div
+            className="flex-1 min-w-0 bg-[hsl(210_30%_97%)] rounded-lg px-2 sm:px-3.5 py-1.5 sm:py-2 flex flex-col justify-center gap-0.5"
+            title={`${t("adminStatCostPricePaid")}: ${fmtMoney(stats.costPricePaid)}`}
+          >
+            <span className="text-[9px] sm:text-xs text-[hsl(220_13%_55%)]">{t("adminStatCostPricePaid")}</span>
+            <span className="text-xs sm:text-lg font-semibold">{fmtMoney(stats.costPricePaid)}</span>
+          </div>
         </div>
 
-        <div
-          className="shrink-0 bg-[hsl(210_30%_97%)] rounded-lg px-3 sm:px-3.5 py-2 flex flex-col justify-center gap-0.5"
-          title={`${t("adminStatRevenue")}: ${fmtMoney(stats.revenue)}`}
-        >
-          <span className="text-[10px] sm:text-xs text-[hsl(220_13%_55%)] whitespace-nowrap">
-            {t("adminStatRevenue")}
-          </span>
-          <span className="text-sm sm:text-lg font-semibold whitespace-nowrap">{fmtMoney(stats.revenue)}</span>
-        </div>
-        <div
-          className="shrink-0 bg-[hsl(210_30%_97%)] rounded-lg px-3 sm:px-3.5 py-2 flex flex-col justify-center gap-0.5"
-          title={`${t("adminStatCostPrice")}: ${fmtMoney(stats.costPrice)}`}
-        >
-          <span className="text-[10px] sm:text-xs text-[hsl(220_13%_55%)] whitespace-nowrap">
-            {t("adminStatCostPrice")}
-          </span>
-          <span className="text-sm sm:text-lg font-semibold whitespace-nowrap">{fmtMoney(stats.costPrice)}</span>
-        </div>
-        <div
-          className="shrink-0 bg-[hsl(210_30%_97%)] rounded-lg px-3 sm:px-3.5 py-2 flex flex-col justify-center gap-0.5"
-          title={`${t("adminStatCostPricePaid")}: ${fmtMoney(stats.costPricePaid)}`}
-        >
-          <span className="text-[10px] sm:text-xs text-[hsl(220_13%_55%)] whitespace-nowrap">
-            {t("adminStatCostPricePaid")}
-          </span>
-          <span className="text-sm sm:text-lg font-semibold whitespace-nowrap">{fmtMoney(stats.costPricePaid)}</span>
-        </div>
-
-        {/* Forces a line break here so these two always start a fresh row,
-            regardless of how much horizontal space the cards above leave. */}
-        <div className="basis-full h-0" aria-hidden="true" />
-
-        <div
-          className="shrink-0 bg-[hsl(210_30%_97%)] rounded-lg px-3 sm:px-3.5 py-2 flex flex-col justify-center gap-0.5"
-          title={`${t("adminStatOrders")}: ${stats.count}`}
-        >
-          <span className="text-[10px] sm:text-xs text-[hsl(220_13%_55%)] whitespace-nowrap">
-            {t("adminStatOrders")}
-          </span>
-          <span className="text-sm sm:text-lg font-semibold whitespace-nowrap">{stats.count}</span>
-        </div>
-        <div
-          className="shrink-0 bg-[hsl(210_30%_97%)] rounded-lg px-3 sm:px-3.5 py-2 flex flex-col justify-center gap-0.5"
-          title={`${t("adminStatNotCollected")}: ${stats.notCollected}`}
-        >
-          <span className="text-[10px] sm:text-xs text-[hsl(220_13%_55%)] whitespace-nowrap">
-            {t("adminStatNotCollected")}
-          </span>
-          <span className="text-sm sm:text-lg font-semibold text-[hsl(0_74%_42%)] whitespace-nowrap">
-            {stats.notCollected}
-          </span>
+        <div className="flex gap-1.5 sm:gap-2.5 items-stretch">
+          <div
+            className="flex-1 min-w-0 bg-[hsl(210_30%_97%)] rounded-lg px-2 sm:px-3.5 py-1.5 sm:py-2 flex flex-col justify-center gap-0.5"
+            title={`${t("adminStatOrders")}: ${stats.count}`}
+          >
+            <span className="text-[9px] sm:text-xs text-[hsl(220_13%_55%)]">{t("adminStatOrders")}</span>
+            <span className="text-xs sm:text-lg font-semibold">{stats.count}</span>
+          </div>
+          <div
+            className="flex-1 min-w-0 bg-[hsl(210_30%_97%)] rounded-lg px-2 sm:px-3.5 py-1.5 sm:py-2 flex flex-col justify-center gap-0.5"
+            title={`${t("adminStatNotCollected")}: ${stats.notCollected}`}
+          >
+            <span className="text-[9px] sm:text-xs text-[hsl(220_13%_55%)]">{t("adminStatNotCollected")}</span>
+            <span className="text-xs sm:text-lg font-semibold text-[hsl(0_74%_42%)]">{stats.notCollected}</span>
+          </div>
+          <div
+            className="flex-1 min-w-0 bg-[hsl(210_30%_97%)] rounded-lg px-2 sm:px-3.5 py-1.5 sm:py-2 flex flex-col justify-center gap-0.5"
+            title={`${t("adminStatReadyNotPicked")}: ${stats.readyNotPicked}`}
+          >
+            <span className="text-[9px] sm:text-xs text-[hsl(220_13%_55%)]">{t("adminStatReadyNotPicked")}</span>
+            <span className="text-xs sm:text-lg font-semibold text-[hsl(38_92%_40%)]">{stats.readyNotPicked}</span>
+          </div>
         </div>
       </div>
 

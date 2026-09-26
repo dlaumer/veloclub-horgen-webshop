@@ -212,7 +212,13 @@ export const ProductModal = ({ product, isOpen, cartItems, onClose, onAddToCart 
                   const alreadyInCart = cartItems
                     .filter((item) => item.productId === product.id && item.colorId === selectedColorData?.id && item.size === size.name)
                     .reduce((sum, item) => sum + item.quantity, 0);
-                  const displayStock = enforceStockLimit ? Math.max(0, size.stock - alreadyInCart) : size.stock;
+                  // Not clamped to 0 here (unlike the enforceStockLimit
+                  // branch) so a negative remainder is visible below - that's
+                  // what drives the "N pre-orders" label for a "just_stock:
+                  // no" article that's been sold past its physical stock.
+                  const rawRemaining = size.stock != null ? size.stock - alreadyInCart : null;
+                  const displayStock = enforceStockLimit ? Math.max(0, rawRemaining ?? 0) : rawRemaining;
+                  const isPreOrder = !enforceStockLimit && rawRemaining != null && rawRemaining < 0;
 
                   return (
                     <button
@@ -220,14 +226,20 @@ export const ProductModal = ({ product, isOpen, cartItems, onClose, onAddToCart 
                       onClick={() => setSelectedSize(size.name)}
                       disabled={enforceStockLimit && (displayStock === 0 || size.stock == null)}
                       className={cn(
-                        "flex h-14 w-14 flex-shrink-0 flex-col items-center justify-center rounded border transition-all sm:h-16 sm:w-16",
+                        "flex h-16 min-w-16 flex-shrink-0 flex-col items-center justify-center gap-0.5 rounded border px-2 transition-all sm:h-20 sm:min-w-20",
                         selectedSize === size.name ? "border-primary bg-primary text-primary-foreground" : "border-border bg-size-button hover:border-muted-foreground",
                         "disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:border-border",
                       )}
                     >
                       <span className="text-xs font-medium sm:text-sm">{size.name}</span>
-                      {(enforceStockLimit && size.stock != null || (size.stock != null && (size.stock > 0 || size.justStock === "yes"))) && (
-                        <span className="text-[10px] sm:text-xs">{displayStock} {t("left")}</span>
+                      {isPreOrder ? (
+                        <span className="whitespace-nowrap text-[10px] leading-tight text-amber-600 sm:text-xs">
+                          {-rawRemaining!} {t("preOrders")}
+                        </span>
+                      ) : (
+                        (enforceStockLimit && size.stock != null || (size.stock != null && (size.stock > 0 || size.justStock === "yes"))) && (
+                          <span className="whitespace-nowrap text-[10px] leading-tight sm:text-xs">{displayStock} {t("left")}</span>
+                        )
                       )}
                     </button>
                   );

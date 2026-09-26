@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUp, ArrowDown, Download } from "lucide-react";
 import { useTranslation } from "@/hooks/useTranslation";
 import { EnrichedArticle } from "@/types/admin";
 import { fmtMoney } from "@/lib/adminFormat";
@@ -22,6 +22,7 @@ interface ArticlesPanelProps {
   reorderMode?: boolean;
   onMoveProduct?: (productId: string, direction: -1 | 1) => void;
   movingProductId?: string | null;
+  onExport: () => void;
 }
 
 export const ArticlesPanel = ({
@@ -33,6 +34,7 @@ export const ArticlesPanel = ({
   reorderMode = false,
   onMoveProduct,
   movingProductId = null,
+  onExport,
 }: ArticlesPanelProps) => {
   const { t } = useTranslation();
 
@@ -57,7 +59,18 @@ export const ArticlesPanel = ({
   return (
     <div className="bg-white border border-[hsl(220_13%_90%)] rounded-2xl p-5 flex flex-col gap-3.5 h-full min-h-0 overflow-hidden">
       <div className="flex justify-between items-center gap-3 flex-wrap shrink-0">
-        <h2 className="m-0 text-[17px] font-semibold">{t("adminArticlesTitle")}</h2>
+        <div className="flex items-center gap-2">
+          <h2 className="m-0 text-[17px] font-semibold">{t("adminArticlesTitle")}</h2>
+          <button
+            type="button"
+            onClick={onExport}
+            title={t("adminDownloadExcel")}
+            aria-label={t("adminDownloadExcel")}
+            className="flex items-center justify-center w-7 h-7 rounded-md text-[hsl(220_13%_45%)] hover:bg-[hsl(210_30%_95%)] shrink-0"
+          >
+            <Download className="w-4 h-4" />
+          </button>
+        </div>
         <div className="flex gap-1.5 flex-wrap">
           {["all", ...categories].map((cat) => (
             <button
@@ -143,10 +156,19 @@ export const ArticlesPanel = ({
           : articles.map((art) => {
               const totalStock = art.sizes.reduce((s, sz) => s + sz.stock, 0);
               const hasLow = art.sizes.some((sz) => sz.stock > 0 && sz.stock <= 3);
+              const hasPreOrder = art.sizes.some((sz) => sz.stock < 0);
               const isOut = totalStock === 0;
-              const flagLabel = isOut ? t("adminOutOfStock") : hasLow ? t("adminLowStock") : "";
-              const flagColor = isOut ? "hsl(0 74% 45%)" : "hsl(35 80% 40%)";
-              const stockSummary = art.sizes.map((sz) => `${sz.name}:${sz.stock}`).join("  ");
+              // A negative size (sold past physical stock, see ProductModal's
+              // isPreOrder) is worse than merely "low" or "out" - surface it
+              // above either of those in the flag.
+              const flagLabel = hasPreOrder
+                ? t("preOrders")
+                : isOut
+                  ? t("adminOutOfStock")
+                  : hasLow
+                    ? t("adminLowStock")
+                    : "";
+              const flagColor = hasPreOrder ? "hsl(265 60% 45%)" : isOut ? "hsl(0 74% 45%)" : "hsl(35 80% 40%)";
 
               return (
                 <div
@@ -172,7 +194,13 @@ export const ArticlesPanel = ({
                     </div>
                     <div className="flex justify-between gap-2">
                       <span className="text-[11.5px] text-[hsl(220_13%_55%)] overflow-hidden text-ellipsis whitespace-nowrap">
-                        {art.colorName} · {stockSummary}
+                        {art.colorName} ·{" "}
+                        {art.sizes.map((sz, i) => (
+                          <span key={sz.name} className={sz.stock < 0 ? "font-bold text-[hsl(265_60%_45%)]" : undefined}>
+                            {i > 0 && "  "}
+                            {sz.name}:{sz.stock}
+                          </span>
+                        ))}
                       </span>
                       {flagLabel && (
                         <span className="text-[11px] font-semibold shrink-0" style={{ color: flagColor }}>

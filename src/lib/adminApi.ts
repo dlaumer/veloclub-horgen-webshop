@@ -230,6 +230,12 @@ export type OrderRecord = {
   // estimateProviderFee/computeMoneyReceived below for how the UI tells
   // those two "0" cases apart.
   provider_fee: number;
+  // The promo code actually applied at checkout, if any (uppercase, or ""
+  // if none) - see resolvePromoCode/finalizeOrder in lib_zahls.js. This
+  // field already existed on the "orders" collection from the very first
+  // migration (1752313200_create_veloclub_collections.js); it just wasn't
+  // surfaced in this type until the Excel export needed to read it.
+  promo_code: string;
 };
 
 // Zahls/Payrexx charges CHF 0.30 + 2.9% per transaction - this is also
@@ -284,7 +290,7 @@ export type OrderItemRecord = {
 export type LogRecord = {
   id: string;
   order: string;
-  kind: "purchase" | "ready" | "pickup" | "cancel" | "ready_undo" | "pickup_undo";
+  kind: "purchase" | "ready" | "pickup" | "cancel" | "ready_undo" | "pickup_undo" | "exchange";
   note: string;
   created: string;
   // The log's own "this actually happened at" timestamp - NOT the same as
@@ -357,6 +363,25 @@ export async function cancelOrder(
   data: { note: string; refundAmount?: number },
 ): Promise<{ ok: boolean; order: OrderRecord; refunded: number }> {
   return pbFetch(`/api/admin/orders/${id}/cancel`, token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
+
+/**
+ * "Umtausch" - swaps one order line to a different size of the SAME
+ * article (price never changes; the backend enforces same-article-only and
+ * moves article_items stock both ways). See
+ * POST /api/admin/orders/{id}/items/{itemId}/exchange in admin.pb.js.
+ */
+export async function exchangeOrderItem(
+  token: string,
+  orderId: string,
+  itemId: string,
+  data: { newSize: string; note?: string },
+): Promise<{ ok: boolean; item: OrderItemRecord; isPreOrder: boolean; readyWasReset: boolean }> {
+  return pbFetch(`/api/admin/orders/${orderId}/items/${itemId}/exchange`, token, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(data),
@@ -473,6 +498,17 @@ export async function deleteArticle(token: string, id: string): Promise<void> {
 export async function listAllArticles(token: string): Promise<ArticleRecord[]> {
   const json = await pbFetch<{ items: ArticleRecord[] }>(
     `/api/collections/articles/records?sort=sort_order&perPage=500`,
+    token,
+  );
+  return json.items;
+}
+
+/** Every article_items row (across all articles) in one call - used by the
+ * stock Excel export, which needs each article's full size/stock breakdown
+ * alongside its raw ArticleRecord fields (see exportXlsx.ts). */
+export async function listAllArticleItems(token: string): Promise<ArticleItemRecord[]> {
+  const json = await pbFetch<{ items: ArticleItemRecord[] }>(
+    `/api/collections/article_items/records?perPage=500`,
     token,
   );
   return json.items;

@@ -244,3 +244,156 @@ routerAdd(
   },
   $apis.requireAuth("admins", "_superusers")
 )
+
+// ---------------------------------------------------------------------
+// POST /api/admin/orders/{id}/items/{itemId}/exchange  ("Umtausch")
+// Swaps one order line to a different size of the SAME article - the price
+// never changes (same article = same price, only the size differs), so
+// this never touches amount_paid/price_paid, only order_items.size and the
+// article_items stock on both the old and new size. Stock moves both ways
+// in one request: the old size gets the quantity back, the new size loses
+// it - so this can't be used to silently create or destroy stock.
+//
+// Body: { "newSize": "M", "note": "..." }  (note optional)
+// Response: { ok: true, item: {...} }
+// ---------------------------------------------------------------------
+routerAdd(
+  "POST",
+  "/api/admin/orders/{id}/items/{itemId}/exchange",
+  (e) => {
+    const zahls = require(`${__hooks}/lib_zahls.js`)
+
+    const order = e.app.findRecordById("orders", e.request.pathValue("id"))
+    if (order.get("cancelled") === true) {
+      throw new BadRequestError("Eine stornierte Bestellung kann nicht umgetauscht werden")
+    }
+
+    const item = e.app.findRecordById("order_items", e.request.pathValue("itemId"))
+    if (item.get("order") !== order.id) {
+      throw new BadRequestError("Dieser Artikel gehört nicht zu dieser Bestellung")
+    }
+
+    const body = e.requestInfo().body || {}
+    const oldSize = item.get("size") || ""
+    const newSize = String(body.newSize || "").trim()
+    const note = String(body.note || "")
+
+    if (!newSize) {
+      throw new BadRequestError("newSize is required")
+    }
+    if (newSize === oldSize) {
+      throw new BadRequestError("Die neue Grösse entspricht der aktuellen Grösse")
+    }
+
+    const article = e.app.findRecordById("articles", item.get("article"))
+    const quantity = Number(item.get("quantity") || 0)
+
+    let newSizeItem
+    try {
+      newSizeItem = e.app.findFirstRecordByFilter(
+        "article_items",
+        "article = {:aid} && size = {:size}",
+        { aid: article.id, size: newSize },
+      )
+    } catch (err) {
+      throw new BadRequestError("Diese Grösse ist für diesen Artikel nicht verfügbar")
+    }
+
+    const availableStock = Number(newSizeItem.get("stock") || 0)
+    // Same "just_stock" rule as checkout (see computeCartPricing's stock
+    // pre-check in lib_zahls.js): "yes" means physical stock is a hard
+    // limit, "no"/unset means the club is fine selling past what's on hand
+    // right now - the exchange still goes through, stock is simply allowed
+    // to go negative (a pre-order/backorder), same as a normal checkout
+    // would have allowed for this article.
+    const enforceStockLimit = article.get("just_stock") === "yes"
+    if (enforceStockLimit && availableStock < quantity) {
+      throw new BadRequestError(
+        "Nicht genug Lagerbestand in Grösse " + newSize + ": verfügbar " + availableStock + ", benötigt " + quantity,
+      )
+    }
+    const becomesPreOrder = availableStock < quantity
+
+    // If this exchange pushes the new size into backorder, the order can no
+    // longer be genuinely "ready for pickup" - reset it (like the
+    // dashboard's own "Rückgängig" button would) so staff don't hand out an
+    // order that's actually missing a piece, and let the customer know via
+    // the same "ready undone" correction email used there.
+    const wasReady = order.get("ready") === true
+    const resetReady = becomesPreOrder && wasReady
+
+    e.app.runInTransaction((txApp) => {
+      // give the old size's stock back
+      try {
+        const oldSizeItem = txApp.findFirstRecordByFilter(
+          "article_items",
+          "article = {:aid} && size = {:size}",
+          { aid: article.id, size: oldSize },
+        )
+        oldSizeItem.set("stock", Number(oldSizeItem.get("stock") || 0) + quantity)
+        txApp.save(oldSizeItem)
+      } catch (err) {
+        // that size's article_items row no longer exists (e.g. removed
+        // from the article since this order was placed) - nothing to
+        // restock it to, but the exchange itself should still proceed.
+      }
+
+      // take the new size's stock - allowed to go negative when
+      // enforceStockLimit is false, same as a normal checkout.
+      const freshNewSizeItem = txApp.findRecordById("article_items", newSizeItem.id)
+      freshNewSizeItem.set("stock", Number(freshNewSizeItem.get("stock") || 0) - quantity)
+      txApp.save(freshNewSizeItem)
+
+      item.set("size", newSize)
+      txApp.save(item)
+
+      const logsCollection = txApp.findCollectionByNameOrId("logs")
+      const log = new Record(logsCollection)
+      log.set("order", order.id)
+      log.set("kind", "exchange")
+      log.set(
+        "note",
+        (article.get("name") || "") +
+          ": " +
+          oldSize +
+          " → " +
+          newSize +
+          (becomesPreOrder ? " (Vorbestellung)" : "") +
+          (note ? " (" + note + ")" : ""),
+      )
+      log.set("admin_name", e.auth ? e.auth.get("name") || e.auth.get("email") : "")
+      log.set("placed_at", new Date().toISOString())
+      txApp.save(log)
+
+      if (resetReady) {
+        order.set("ready", false)
+        txApp.save(order)
+
+        const readyUndoLog = new Record(logsCollection)
+        readyUndoLog.set("order", order.id)
+        readyUndoLog.set("kind", "ready_undo")
+        readyUndoLog.set("note", "Automatisch zurückgesetzt durch Umtausch auf Vorbestellung (" + newSize + ")")
+        readyUndoLog.set("admin_name", e.auth ? e.auth.get("name") || e.auth.get("email") : "")
+        readyUndoLog.set("placed_at", new Date().toISOString())
+        txApp.save(readyUndoLog)
+      }
+    })
+
+    zahls.sendExchangeEmail(e.app, order, {
+      articleName: article.get("name") || "",
+      oldSize: oldSize,
+      newSize: newSize,
+      isPreOrder: becomesPreOrder,
+    })
+
+    // Same customer-facing correction email the dashboard's "Rückgängig"
+    // button triggers - the exchange email above already explains the size
+    // change itself, this one specifically covers "ready" no longer holding.
+    if (resetReady) {
+      zahls.sendReadyUndoEmail(e.app, order)
+    }
+
+    return e.json(200, { ok: true, item: item, isPreOrder: becomesPreOrder, readyWasReset: resetReady })
+  },
+  $apis.requireAuth("admins", "_superusers")
+)

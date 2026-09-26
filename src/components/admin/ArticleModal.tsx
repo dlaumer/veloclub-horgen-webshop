@@ -550,17 +550,38 @@ export const ArticleModal = ({
             </div>
             <div className="flex flex-col gap-1.5">
               {article.sizes.map((sz) => {
-                const color =
-                  sz.stock === 0 ? "hsl(0 74% 45%)" : sz.stock <= 3 ? "hsl(35 80% 40%)" : "hsl(150 45% 30%)";
+                // Negative stock means it's been sold past what's physically
+                // available (a "just_stock: no" article, see ProductModal's
+                // isPreOrder) - genuinely different from merely "low", so it
+                // gets its own distinct color/badge rather than just sliding
+                // further down the same red/orange/green scale.
+                const isPreOrder = sz.stock < 0;
+                const color = isPreOrder
+                  ? "hsl(265 60% 45%)"
+                  : sz.stock === 0
+                    ? "hsl(0 74% 45%)"
+                    : sz.stock <= 3
+                      ? "hsl(35 80% 40%)"
+                      : "hsl(150 45% 30%)";
                 return (
                   <div
                     key={sz.name}
-                    className="flex justify-between items-center px-3.5 py-2.5 bg-[hsl(210_30%_97%)] rounded-lg text-[13.5px]"
+                    className={cn(
+                      "flex justify-between items-center px-3.5 py-2.5 rounded-lg text-[13.5px]",
+                      isPreOrder
+                        ? "bg-[hsl(265_60%_97%)] border border-[hsl(265_60%_85%)]"
+                        : "bg-[hsl(210_30%_97%)]",
+                    )}
                   >
                     <span className="font-semibold">
                       {t("adminSize")} {sz.name}
                     </span>
-                    <span className="font-semibold" style={{ color }}>
+                    <span className="font-semibold flex items-center gap-1.5" style={{ color }}>
+                      {isPreOrder && (
+                        <span className="px-[7px] py-[1px] rounded-full text-[10px] font-bold uppercase tracking-wide bg-[hsl(265_60%_45%)] text-white">
+                          {t("preOrders")}
+                        </span>
+                      )}
                       {sz.stock} {t("adminInStock")}
                     </span>
                   </div>

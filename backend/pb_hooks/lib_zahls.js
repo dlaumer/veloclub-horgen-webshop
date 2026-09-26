@@ -381,15 +381,32 @@ function buildItemRows(lines) {
     const sizeHtml = it.size ? `<div>Grösse: ${escapeHtml(it.size)}</div>` : ""
     const colorHtml = it.color ? `<div>Farbe: ${escapeHtml(it.color)}</div>` : ""
 
+    // Only set by finalizeOrder() at checkout time (see its "just_stock"
+    // comment) - how many units of THIS line have no physical stock right
+    // now. orderItemsAsLines() (used by the ready/picked-up/undo emails)
+    // never sets this, so those emails simply don't show it - this is
+    // checkout-confirmation-only, on purpose (that's the moment the
+    // customer needs to know they're partly pre-ordering).
+    const backorderQty = Number(it.backorderQty || 0)
+    const backorderBadge =
+      backorderQty > 0
+        ? `<span style="margin-left:6px;display:inline-block;padding:1px 7px;border-radius:9999px;font-size:10.5px;font-weight:600;background:#fdecea;color:#a13a2d;">Vorbestellung</span>`
+        : ""
+    const backorderHtml =
+      backorderQty > 0
+        ? `<div style="margin-top:4px;color:#a13a2d;">${backorderQty} Stk. aktuell nicht vorrätig - sobald genügend Bestellungen vorliegen, wird dieser Artikel nachbestellt. Wir benachrichtigen dich per E-Mail, sobald er verfügbar ist.</div>`
+        : ""
+
     rowsHtml.push(`
       <tr>
         <td width="90" style="padding:8px 10px;vertical-align:top;width:90px;">${imgHtml}</td>
         <td style="padding:8px 10px;vertical-align:top;">
-          <div style="font-weight:600;">${escapeHtml(title)}${returnBadge}</div>
+          <div style="font-weight:600;">${escapeHtml(title)}${returnBadge}${backorderBadge}</div>
           <div style="font-size:12px;color:#555;">
             <div>Menge: ${it.qty}</div>
             ${sizeHtml}
             ${colorHtml}
+            ${backorderHtml}
           </div>
         </td>
         <td style="padding:8px 10px;vertical-align:top;text-align:right;font-size:12px;color:#555;white-space:nowrap;">
@@ -404,10 +421,107 @@ function buildItemRows(lines) {
 
     const sizeText = it.size ? ` (${it.size})` : ""
     const colorText = it.color ? `, Farbe: ${it.color}` : ""
-    linesText.push(`• ${title}${sizeText}${colorText} × ${it.qty} — Einzelpreis: ${price}, Zeilensumme: ${lineTotal}`)
+    const backorderNoteText =
+      backorderQty > 0
+        ? `\n  ⚠ ${backorderQty} Stk. aktuell nicht vorrätig - sobald genügend Bestellungen vorliegen, wird dieser Artikel nachbestellt. Du wirst per E-Mail benachrichtigt, sobald er verfügbar ist.`
+        : ""
+    linesText.push(
+      `• ${title}${sizeText}${colorText} × ${it.qty} — Einzelpreis: ${price}, Zeilensumme: ${lineTotal}${backorderNoteText}`,
+    )
   }
 
   return { rowsHtml: rowsHtml.join(""), linesText: linesText.join("\n") }
+}
+
+// Rebuilds buildItemRows()-compatible "lines" from an order's PERSISTED
+// order_items rows, for emails sent well after checkout (ready/picked-up/
+// undo below) that don't have a fresh `pricing` object in scope - that only
+// exists at checkout time. Looked up fresh from the DB each time rather
+// than passed in, so it always reflects the order's actual saved items,
+// even if an article was since renamed or had its images reordered.
+// unit_price/price_paid are stored in CHF (see finalizeOrder), so they're
+// converted back to cents here (matching computeCartPricing's shape) since
+// that's what buildItemRows expects.
+function orderItemsAsLines(app, order) {
+  const API_BASE = "https://api-webshop-veloclubhorgen.duckdns.org"
+  const items = app.findRecordsByFilter("order_items", "order = {:oid}", "", 0, 0, { oid: order.id })
+
+  return items.map((item) => {
+    let article = null
+    try {
+      article = app.findRecordById("articles", item.get("article"))
+    } catch (err) {
+      // article was deleted since this order was placed - fall back to
+      // blanks rather than failing the whole email.
+    }
+    const images = article ? article.get("images") || [] : []
+    const image =
+      article && images.length ? API_BASE + "/api/files/articles/" + article.id + "/" + images[0] : ""
+
+    return {
+      qty: Number(item.get("quantity") || 0),
+      name: article ? article.get("name") : "",
+      sku: article ? article.get("article_number") : "",
+      unitFull: Math.round(Number(item.get("unit_price") || 0) * 100),
+      lineTotalCents: Math.round(Number(item.get("price_paid") || 0) * 100),
+      isReturn: !!item.get("is_return"),
+      image: image,
+      size: item.get("size") || "",
+      color: item.get("color") || "",
+    }
+  })
+}
+
+// Full "Bestellte Artikel" section (item table + optional discount summary
+// + total) as both HTML and plain text - the same shape used in
+// sendOrderConfirmationEmail, reused by the ready/picked-up/undo emails
+// below so a customer can always see exactly what their order contains,
+// not just its status. `lines` should come from orderItemsAsLines().
+function renderOrderItemsSection(lines, amountPaidChf, promoCode) {
+  const { rowsHtml, linesText } = buildItemRows(lines)
+  const subtotalChf = lines.reduce((s, l) => s + (l.unitFull / 100) * l.qty, 0)
+  const discountChf = Math.max(0, subtotalChf - amountPaidChf)
+  const hasDiscount = discountChf > 0.005
+  const total = `${fmtMoneyDE(amountPaidChf)} CHF`
+
+  const text = `Bestellte Artikel:
+${linesText}
+${
+  hasDiscount
+    ? `\nZwischensumme: ${fmtMoneyDE(subtotalChf)} CHF\nRabatt (${promoCode}): -${fmtMoneyDE(discountChf)} CHF\n`
+    : ""
+}
+Gesamtsumme: ${total}
+`
+
+  const html = `
+    <h3 style="font-size:15px;margin:12px 0 6px 0;">Bestellte Artikel</h3>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;">
+      <tbody>
+        ${rowsHtml}
+      </tbody>
+    </table>
+
+    <div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px;">
+      ${
+        hasDiscount
+          ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:#6b7280;margin-bottom:2px;">
+        <span>Zwischensumme</span><span>${fmtMoneyDE(subtotalChf)} CHF</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;font-size:13px;color:#92600b;margin-bottom:6px;">
+        <span>Rabatt (${escapeHtml(promoCode)})</span><span>-${fmtMoneyDE(discountChf)} CHF</span>
+      </div>`
+          : ""
+      }
+      <div style="display:flex;justify-content:flex-end;">
+        <div style="text-align:right;font-size:14px;">
+          <div style="color:#6b7280;">Gesamtsumme</div>
+          <div style="font-size:18px;font-weight:700;">${total}</div>
+        </div>
+      </div>
+    </div>`
+
+  return { html, text }
 }
 
 // ---- order finalization: creates orders/order_items/logs + decrements stock ----
@@ -454,12 +568,35 @@ function finalizeOrder(app, input) {
       { aid: article.id, size: line.size },
     )
     const available = Number(stockItem.get("stock") || 0)
-    if (line.qty > available) {
+    // "Just sell stock" (articles.just_stock) decides whether running out of
+    // physical stock actually blocks a sale. When "yes", a sale can never
+    // push stock below 0 here (ProductModal.tsx mirrors this - it disables
+    // the size button and caps quantity at what's actually available).
+    // When "no"/unset, the club is fine selling more than they physically
+    // have on hand right now - stock is allowed to go negative (a
+    // pre-order/backorder), and the storefront surfaces that to customers
+    // as a "N pre-orders" count per size (see /api/stock's toColor() and
+    // ProductModal.tsx, which both already pass negative stock through
+    // untouched - no clamping needed there).
+    if (article.get("just_stock") === "yes" && line.qty > available) {
       throw new BadRequestError(
         "Nicht genug Lagerbestand fuer " + article.get("name") + " (" + line.size + "): verfuegbar " + available,
       )
     }
-    stockBySkuSize[key] = { article, item: stockItem }
+    stockBySkuSize[key] = { article, item: stockItem, available }
+  }
+
+  // How many units are still "physically available" for each sku+size,
+  // before any of this order's lines are allocated against it - clamped at
+  // 0 (stock may already be negative from an earlier backorder). Consumed
+  // line-by-line below so that if the same sku+size appears on more than
+  // one line (e.g. a return-promo item split from the paid one), the first
+  // line eats into whatever's really left and only the remainder counts as
+  // backordered - never letting two lines each independently think they got
+  // the same last unit.
+  const remainingAvailableByKey = {}
+  for (const key in stockBySkuSize) {
+    remainingAvailableByKey[key] = Math.max(0, stockBySkuSize[key].available)
   }
 
   const ordersCollection = app.findCollectionByNameOrId("orders")
@@ -494,6 +631,16 @@ function finalizeOrder(app, input) {
 
     const key = line.sku + "|" + line.size
     const article = stockBySkuSize[key].article
+
+    // How many of THIS line's units have no physical stock right now (only
+    // possible for a "just_stock: no" article - see the pre-check above,
+    // which is the only thing that would otherwise have blocked this line).
+    // Read by sendOrderConfirmationEmail (via buildItemRows) to show the
+    // customer a "pre-order" note - see its own comment for why this is
+    // checkout-only info, not persisted on order_items.
+    const availableLeft = remainingAvailableByKey[key] || 0
+    line.backorderQty = Math.max(0, line.qty - availableLeft)
+    remainingAvailableByKey[key] = Math.max(0, availableLeft - line.qty)
 
     const orderItem = new Record(orderItemsCollection)
     orderItem.set("order", order.id)
@@ -653,11 +800,17 @@ function sendReadyEmail(app, order) {
     const settings = app.settings()
     const orderId = order.get("order_number")
     const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const items = renderOrderItemsSection(
+      orderItemsAsLines(app, order),
+      Number(order.get("amount_paid") || 0),
+      order.get("promo_code") || "",
+    )
 
     const text = `${name},
 
 Deine Bestellung #${orderId} ist bereit zur Abholung.
 
+${items.text}
 ${PICKUP_NOTE}
 ${CONTACT_NOTE}
 
@@ -673,7 +826,8 @@ ${SHOP_NAME}
       Deine Bestellung <span style="font-weight:600;">#${escapeHtml(orderId)}</span> ist
       <strong>bereit zur Abholung</strong>! 🎉
     </p>
-    <div style="font-size:13px;color:#374151;">
+    ${items.html}
+    <div style="font-size:13px;color:#374151;margin-top:14px;">
       <p style="margin:0 0 6px 0;">${escapeHtml(PICKUP_NOTE)}</p>
       <p style="margin:0 0 6px 0;">${escapeHtml(CONTACT_NOTE)}</p>
     </div>`,
@@ -701,11 +855,17 @@ function sendPickedUpEmail(app, order) {
     const settings = app.settings()
     const orderId = order.get("order_number")
     const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const items = renderOrderItemsSection(
+      orderItemsAsLines(app, order),
+      Number(order.get("amount_paid") || 0),
+      order.get("promo_code") || "",
+    )
 
     const text = `${name},
 
 vielen Dank - deine Bestellung #${orderId} wurde abgeholt. Wir hoffen, du hast Freude an deinen neuen Artikeln!
 
+${items.text}
 ${CONTACT_NOTE}
 
 Sportliche Grüsse
@@ -720,7 +880,8 @@ ${SHOP_NAME}
       Vielen Dank – deine Bestellung <span style="font-weight:600;">#${escapeHtml(orderId)}</span> wurde
       <strong>abgeholt</strong>. Wir hoffen, du hast viel Freude an deinen neuen Artikeln!
     </p>
-    <div style="font-size:13px;color:#374151;">
+    ${items.html}
+    <div style="font-size:13px;color:#374151;margin-top:14px;">
       <p style="margin:0 0 6px 0;">${escapeHtml(CONTACT_NOTE)}</p>
     </div>`,
     )
@@ -762,11 +923,17 @@ function sendReadyUndoEmail(app, order) {
       "Wir haben dir eben mitgeteilt, dass deine Bestellung bereit zur Abholung ist - das war leider ein Irrtum. " +
       "Bitte ignoriere diese vorherige Nachricht, deine Bestellung ist noch NICHT abholbereit. " +
       "Wir melden uns bei dir, sobald sie es wirklich ist."
+    const items = renderOrderItemsSection(
+      orderItemsAsLines(app, order),
+      Number(order.get("amount_paid") || 0),
+      order.get("promo_code") || "",
+    )
 
     const text = `${name},
 
 ${correction}
 
+${items.text}
 ${CONTACT_NOTE}
 
 Sportliche Grüsse
@@ -778,7 +945,8 @@ ${SHOP_NAME}
       `
     <p style="margin:0 0 10px 0;">${escapeHtml(name)},</p>
     ${renderCorrectionNotice(escapeHtml(correction))}
-    <div style="font-size:13px;color:#374151;">
+    ${items.html}
+    <div style="font-size:13px;color:#374151;margin-top:14px;">
       <p style="margin:0 0 6px 0;">${escapeHtml(CONTACT_NOTE)}</p>
     </div>`,
     )
@@ -807,11 +975,17 @@ function sendPickedUpUndoEmail(app, order) {
     const correction =
       "Wir haben dir eben mitgeteilt, dass deine Bestellung abgeholt wurde - das war leider ein Irrtum. " +
       "Bitte ignoriere diese vorherige Nachricht, deine Bestellung wartet weiterhin auf dich."
+    const items = renderOrderItemsSection(
+      orderItemsAsLines(app, order),
+      Number(order.get("amount_paid") || 0),
+      order.get("promo_code") || "",
+    )
 
     const text = `${name},
 
 ${correction}
 
+${items.text}
 ${CONTACT_NOTE}
 
 Sportliche Grüsse
@@ -823,7 +997,8 @@ ${SHOP_NAME}
       `
     <p style="margin:0 0 10px 0;">${escapeHtml(name)},</p>
     ${renderCorrectionNotice(escapeHtml(correction))}
-    <div style="font-size:13px;color:#374151;">
+    ${items.html}
+    <div style="font-size:13px;color:#374151;margin-top:14px;">
       <p style="margin:0 0 6px 0;">${escapeHtml(CONTACT_NOTE)}</p>
     </div>`,
     )
@@ -838,6 +1013,75 @@ ${SHOP_NAME}
     app.newMailClient().send(message)
   } catch (err) {
     app.logger().error("picked up undo email failed", "orderId", order.get("order_number"), "error", err)
+  }
+}
+
+// "Umtausch" (exchange) confirmation - sent from the
+// POST /api/admin/orders/{id}/items/{itemId}/exchange route in admin.pb.js
+// right after it's already swapped the order_item's size and moved the
+// stock. `details.oldSize`/`newSize` describe just the one line that
+// changed; the item table below (built from the order's now-updated
+// order_items) shows the order as it stands AFTER the exchange, so the
+// customer sees their order's current, correct state alongside the
+// specific change that was just made.
+function sendExchangeEmail(app, order, details) {
+  try {
+    const settings = app.settings()
+    const orderId = order.get("order_number")
+    const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    let changeNote =
+      `Wir haben "${details.articleName}" für dich von Grösse ${details.oldSize} ` +
+      `auf Grösse ${details.newSize} umgetauscht.`
+    // The new size wasn't physically in stock (only possible for a
+    // "just_stock: no" article, same rule as checkout's own pre-order
+    // handling - see admin.pb.js's exchange route) - say so plainly, since
+    // this also means pickup will take longer than originally expected.
+    if (details.isPreOrder) {
+      changeNote +=
+        ` Die neue Grösse ist momentan nicht an Lager und wird nachbestellt - ` +
+        `wir melden uns, sobald sie bei uns eingetroffen und deine Bestellung wirklich bereit ist.`
+    }
+    const items = renderOrderItemsSection(
+      orderItemsAsLines(app, order),
+      Number(order.get("amount_paid") || 0),
+      order.get("promo_code") || "",
+    )
+
+    const text = `${name},
+
+${changeNote}
+
+${items.text}
+${CONTACT_NOTE}
+
+Sportliche Grüsse
+${SHOP_NAME}
+`
+
+    const html = renderEmailShell(
+      orderId,
+      `
+    <p style="margin:0 0 10px 0;">${escapeHtml(name)},</p>
+    <div style="margin:0 0 14px 0;padding:12px;border-radius:10px;background:#eef2ff;border:1px solid #c7d2fe;">
+      <div style="font-size:13px;font-weight:600;color:#3730a3;margin-bottom:2px;">Umtausch</div>
+      <div style="font-size:13px;color:#3730a3;">${escapeHtml(changeNote)}</div>
+    </div>
+    ${items.html}
+    <div style="font-size:13px;color:#374151;margin-top:14px;">
+      <p style="margin:0 0 6px 0;">${escapeHtml(CONTACT_NOTE)}</p>
+    </div>`,
+    )
+
+    const message = new MailerMessage({
+      from: { address: settings.meta.senderAddress, name: settings.meta.senderName },
+      to: [{ address: order.get("buyer_email") }],
+      subject: `Umtausch zu deiner Bestellung #${orderId} – ${SHOP_NAME}`,
+      html: html,
+      text: text,
+    })
+    app.newMailClient().send(message)
+  } catch (err) {
+    app.logger().error("exchange email failed", "orderId", order.get("order_number"), "error", err)
   }
 }
 
@@ -856,4 +1100,5 @@ module.exports = {
   sendPickedUpEmail,
   sendReadyUndoEmail,
   sendPickedUpUndoEmail,
+  sendExchangeEmail,
 }

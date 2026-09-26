@@ -3,11 +3,13 @@ import react from "@vitejs/plugin-react-swc";
 import path from "path";
 import { componentTagger } from "lovable-tagger";
 
-// Clean URLs (e.g. /admin, not /#/admin) need the router's basename to
-// match wherever the app is actually served from. Local dev (npm run dev)
-// is always served at the domain root, so that stays "/"; update this if
-// the production deployment folder ever changes.
-const PROD_BASE = "/neu/";
+// This has to match wherever the production build actually gets deployed -
+// it's baked into every asset URL (<script src>, <link href>, assetUrl())
+// at BUILD time, so changing this always requires a rebuild + redeploy, it
+// can't be fixed by just moving files around on the server afterwards.
+// Deployed at the site root (not a subfolder) as of 2026-09 - was "/neu/"
+// while this rebuild lived alongside the old frontend at /neu/ for testing.
+const PROD_BASE = "/";
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => ({

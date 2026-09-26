@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CheckCircle2, PackageCheck, XCircle, Clock, User, Undo2 } from "lucide-react";
+import { CheckCircle2, PackageCheck, XCircle, Clock, User, Undo2, Repeat } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { useTranslation } from "@/hooks/useTranslation";
 import { useLanguage } from "@/contexts/LanguageContext";
@@ -25,6 +25,19 @@ interface OrderModalProps {
   undoingReady?: boolean;
   undoingPicked?: boolean;
   busy: boolean;
+  // "Umtausch" (exchange) - swap one order line to a different size of the
+  // SAME article. sizesByArticleNumber comes from data the dashboard
+  // already has loaded (raw articles/article_items), keyed by the
+  // storefront sku (EnrichedOrderItem.articleNumber), so opening the size
+  // picker below needs no extra request. justStock mirrors the article's
+  // own "just_stock" flag - when it's off, a size with too little stock is
+  // still pickable (the exchange goes through as a pre-order/backorder,
+  // see admin.pb.js's exchange route), so the picker marks those instead of
+  // hiding them.
+  sizesByArticleNumber: Record<string, { justStock: boolean; sizes: Array<{ size: string; stock: number }> }>;
+  onExchange: (orderId: string, itemId: string, newSize: string) => void;
+  exchanging?: boolean;
+  exchangingItemId?: string;
 }
 
 const ACTION_BASE =
@@ -51,9 +64,19 @@ export const OrderModal = ({
   undoingReady,
   undoingPicked,
   busy,
+  sizesByArticleNumber,
+  onExchange,
+  exchanging,
+  exchangingItemId,
 }: OrderModalProps) => {
   const { t } = useTranslation();
   const { language } = useLanguage();
+
+  // Which item's inline "Umtausch" size picker is currently open, and the
+  // size drafted in it - local UI state only, reset whenever a different
+  // order is opened (the guard below) or the picker is closed/confirmed.
+  const [exchangeOpenFor, setExchangeOpenFor] = useState<string | null>(null);
+  const [exchangeSizeDraft, setExchangeSizeDraft] = useState("");
 
   // Local draft of the internal note, separate from order.internal_note so
   // typing doesn't need a round-trip to the server. Re-synced whenever a
@@ -77,6 +100,17 @@ export const OrderModal = ({
   if (order && (order.id !== noteSyncedFor.id || (order.internal_note || "") !== noteSyncedFor.note)) {
     setNoteDraft(order.internal_note || "");
     setNoteSyncedFor({ id: order.id, note: order.internal_note || "" });
+  }
+
+  // Same "adjust state when a prop changes" pattern as noteDraft above -
+  // close the exchange picker whenever a different order is opened (or the
+  // modal is closed and reopened for the same order), rather than leaving
+  // it stuck open on an item that isn't even shown yet.
+  const [exchangeSyncedOrderId, setExchangeSyncedOrderId] = useState(order?.id);
+  if (order && order.id !== exchangeSyncedOrderId) {
+    setExchangeOpenFor(null);
+    setExchangeSizeDraft("");
+    setExchangeSyncedOrderId(order.id);
   }
 
   if (!order) return null;
@@ -316,32 +350,106 @@ export const OrderModal = ({
 
         <div className="text-[11px] text-[hsl(220_13%_55%)] uppercase tracking-wide mb-2">{t("adminItems")}</div>
         <div className="flex flex-col gap-1.5 mb-4">
-          {order.items.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              onClick={() => onOpenArticle(item.articleNumber)}
-              className="grid grid-cols-[40px_1fr_auto_auto_auto] gap-2.5 items-center px-3 py-2.5 bg-[hsl(210_30%_97%)] rounded-lg text-[13px] text-left w-full hover:bg-[hsl(210_30%_93%)] transition-colors cursor-pointer"
-              title={t("adminOpenArticle")}
-            >
-              <img
-                src={item.image}
-                alt=""
-                className="w-10 h-10 rounded-md object-cover bg-white border border-[hsl(220_13%_90%)]"
-              />
-              <span>
-                {item.name} <span className="text-[hsl(220_13%_55%)]">— {item.color}, {item.size}</span>
-                {item.isReturn && (
-                  <span className="ml-2 inline-block px-[7px] py-[1px] rounded-full text-[10.5px] font-semibold bg-[hsl(35_90%_92%)] text-[hsl(35_80%_35%)] align-middle">
-                    {t("adminReturnTag")}
-                  </span>
+          {order.items.map((item) => {
+            // Other sizes of this SAME article, excluding the one it's
+            // currently in - "Umtausch" only ever swaps size, never article,
+            // so the price can never change (see admin.pb.js's exchange
+            // route, which enforces this server-side too).
+            const articleSizes = sizesByArticleNumber[item.articleNumber];
+            const otherSizes = (articleSizes?.sizes || []).filter((s) => s.size !== item.size);
+            // Same "just_stock" rule the backend enforces - when it's off, a
+            // size with less stock than this line's quantity is still a
+            // valid pick, it just becomes a pre-order/backorder.
+            const justStock = articleSizes?.justStock ?? true;
+            const isExchangeOpen = exchangeOpenFor === item.id;
+            const isExchangingThis = !!exchanging && exchangingItemId === item.id;
+            const exchangeDisabled = cancelledState === true || otherSizes.length === 0;
+
+            return (
+              <div key={item.id} className="rounded-lg bg-[hsl(210_30%_97%)] overflow-hidden">
+                <div className="grid grid-cols-[40px_1fr_auto_auto_auto_auto] gap-2.5 items-center px-3 py-2.5 text-[13px]">
+                  <button
+                    type="button"
+                    onClick={() => onOpenArticle(item.articleNumber)}
+                    title={t("adminOpenArticle")}
+                    className="contents text-left cursor-pointer"
+                  >
+                    <img
+                      src={item.image}
+                      alt=""
+                      className="w-10 h-10 rounded-md object-cover bg-white border border-[hsl(220_13%_90%)]"
+                    />
+                    <span>
+                      {item.name} <span className="text-[hsl(220_13%_55%)]">— {item.color}, {item.size}</span>
+                      {item.isReturn && (
+                        <span className="ml-2 inline-block px-[7px] py-[1px] rounded-full text-[10.5px] font-semibold bg-[hsl(35_90%_92%)] text-[hsl(35_80%_35%)] align-middle">
+                          {t("adminReturnTag")}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-[hsl(220_13%_45%)]">×{item.quantity}</span>
+                    <span className="text-[hsl(220_13%_45%)]">{fmtMoney(item.unitPrice)}</span>
+                    <span className="font-semibold text-right">{fmtMoney(item.pricePaid)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    disabled={exchangeDisabled}
+                    onClick={() => {
+                      setExchangeOpenFor(isExchangeOpen ? null : item.id);
+                      setExchangeSizeDraft(otherSizes[0]?.size || "");
+                    }}
+                    title={t("adminExchangeSize")}
+                    aria-label={t("adminExchangeSize")}
+                    className="flex items-center justify-center w-7 h-7 rounded-md text-[hsl(220_13%_45%)] hover:bg-[hsl(210_30%_90%)] disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
+                  >
+                    <Repeat className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+                {isExchangeOpen && (
+                  <div className="flex flex-wrap items-center gap-2 px-3 pb-2.5">
+                    <select
+                      value={exchangeSizeDraft}
+                      onChange={(e) => setExchangeSizeDraft(e.target.value)}
+                      className="h-8 rounded-md border border-[hsl(220_13%_88%)] px-2 text-[12.5px] bg-white"
+                    >
+                      {otherSizes.map((s) => {
+                        const isPreOrder = !justStock && s.stock < item.quantity;
+                        return (
+                          <option key={s.size} value={s.size}>
+                            {t("adminSize")} {s.size} ({s.stock} {t("adminInStock")})
+                            {isPreOrder ? ` – ${t("preOrders")}` : ""}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    {(() => {
+                      const draftSize = otherSizes.find((s) => s.size === exchangeSizeDraft);
+                      const draftIsPreOrder = !!draftSize && !justStock && draftSize.stock < item.quantity;
+                      return draftIsPreOrder ? (
+                        <span className="text-[11px] font-semibold text-[hsl(265_60%_45%)]">
+                          {t("preOrders")}
+                        </span>
+                      ) : null;
+                    })()}
+                    <Button
+                      type="button"
+                      size="sm"
+                      disabled={isExchangingThis || !exchangeSizeDraft}
+                      onClick={() => {
+                        onExchange(order.id, item.id, exchangeSizeDraft);
+                        setExchangeOpenFor(null);
+                      }}
+                    >
+                      {isExchangingThis ? t("adminExchanging") : t("adminConfirmExchange")}
+                    </Button>
+                    <Button type="button" size="sm" variant="outline" onClick={() => setExchangeOpenFor(null)}>
+                      {t("adminCancel")}
+                    </Button>
+                  </div>
                 )}
-              </span>
-              <span className="text-[hsl(220_13%_45%)]">×{item.quantity}</span>
-              <span className="text-[hsl(220_13%_45%)]">{fmtMoney(item.unitPrice)}</span>
-              <span className="font-semibold text-right">{fmtMoney(item.pricePaid)}</span>
-            </button>
-          ))}
+              </div>
+            );
+          })}
         </div>
 
         <div className="flex justify-between items-center py-3 px-1 border-t border-[hsl(220_13%_90%)]">

@@ -9,15 +9,19 @@ import {
   listLogs,
   updateOrder,
   cancelOrder,
+  exchangeOrderItem,
   parseTriState,
   computeMoneyReceived,
   AuthExpiredError,
   articleFileUrl,
   listAllArticles,
+  listAllArticleItems,
   setArticleSortOrders,
+  ArticleRecord,
 } from "@/lib/adminApi";
+import { exportOrdersToXlsx, exportStockToXlsx } from "@/lib/exportXlsx";
 import { fetchStock } from "@/lib/stockApi";
-import { inRange, RangeMode } from "@/lib/adminFormat";
+import { inRange, RangeMode, rangeFilenameLabel } from "@/lib/adminFormat";
 import { assetUrl } from "@/lib/assetUrl";
 import { cn } from "@/lib/utils";
 import { EnrichedOrder, EnrichedArticle, EnrichedLog } from "@/types/admin";
@@ -52,7 +56,6 @@ const AdminDashboard = () => {
   const [busyOrderId, setBusyOrderId] = useState<string | null>(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
   const [cancelNote, setCancelNote] = useState("");
-  const [cancelRefundAmount, setCancelRefundAmount] = useState("");
   const [promoCodesOpen, setPromoCodesOpen] = useState(false);
 
   const ordersQuery = useQuery({
@@ -82,6 +85,14 @@ const AdminDashboard = () => {
   const rawArticlesQuery = useQuery({
     queryKey: ["admin-articles-raw"],
     queryFn: () => listAllArticles(token),
+    refetchInterval: 30000,
+  });
+  // Bulk article_items (every size/stock row) - used by the stock Excel
+  // export (exportStockToXlsx), which needs full per-size stock alongside
+  // the raw article fields above.
+  const rawArticleItemsQuery = useQuery({
+    queryKey: ["admin-article-items-raw"],
+    queryFn: () => listAllArticleItems(token),
     refetchInterval: 30000,
   });
 
@@ -175,7 +186,18 @@ const AdminDashboard = () => {
       }));
       const itemCount = items.reduce((s, it) => s + it.quantity, 0);
       const costPriceTotal = items.reduce((s, it) => s + it.costPrice, 0);
-      const costPricePaidTotal = items.reduce((s, it) => s + (it.isReturn ? 0 : it.costPrice), 0);
+      // A return_category promo only ever gives ONE unit free per line (see
+      // computeCartPricing's return_category branch in lib_zahls.js - the
+      // discount is capped at exactly one unitFull, no matter the line's
+      // quantity), but order_items.is_return is a single yes/no flag on the
+      // WHOLE line. Excluding it.costPrice entirely here would wrongly zero
+      // out every paid unit on a multi-quantity return-promo line too - only
+      // the cost of the one actually-free unit should drop out.
+      const costPricePaidTotal = items.reduce((s, it) => {
+        if (!it.isReturn || it.quantity <= 0) return s + it.costPrice;
+        const perUnit = it.costPrice / it.quantity;
+        return s + perUnit * Math.max(0, it.quantity - 1);
+      }, 0);
       // Legacy-imported orders (payment_provider === "legacy") don't follow
       // the same amount_paid convention as real Zahls/free orders - see the
       // pricePaid/moneyReceived comments on EnrichedOrder (types/admin.ts)
@@ -252,7 +274,10 @@ const AdminDashboard = () => {
     const costPrice = notCancelled.reduce((s, o) => s + (o.costPriceTotal || 0), 0);
     const costPricePaid = notCancelled.reduce((s, o) => s + (o.costPricePaidTotal || 0), 0);
     const notCollected = filteredOrders.filter((o) => !o.cancelled && parseTriState(o.picked_up) === false).length;
-    return { count: filteredOrders.length, revenue, received, costPrice, costPricePaid, notCollected };
+    const readyNotPicked = filteredOrders.filter(
+      (o) => !o.cancelled && parseTriState(o.ready) === true && parseTriState(o.picked_up) === false,
+    ).length;
+    return { count: filteredOrders.length, revenue, received, costPrice, costPricePaid, notCollected, readyNotPicked };
   }, [filteredOrders]);
 
   const enrichedLogs: EnrichedLog[] = useMemo(() => {
@@ -449,6 +474,86 @@ const AdminDashboard = () => {
     moveProductMutation.mutate(next);
   };
 
+  // Excel downloads - both export exactly what's currently visible in the
+  // respective panel (same search text / date range / category filter the
+  // admin already has set), not the whole dataset unconditionally. See
+  // exportXlsx.ts for the column layout (mirrors the legacy Lagerbestand/
+  // Bestellungen sheets).
+  const handleExportOrders = () => {
+    if (filteredOrders.length === 0) {
+      toast({ description: t("adminExportEmpty") });
+      return;
+    }
+    const label = rangeFilenameLabel(rangeMode, new Date(), customFrom, customTo);
+    exportOrdersToXlsx(filteredOrders, label);
+  };
+
+  const handleExportStock = () => {
+    const visibleArticleNumbers = new Set(filteredArticles.map((a) => a.articleNumber));
+    const rawArticles = (rawArticlesQuery.data || []).filter((a) => visibleArticleNumbers.has(a.article_number));
+    if (rawArticles.length === 0) {
+      toast({ description: t("adminExportEmpty") });
+      return;
+    }
+    const rawArticleIds = new Set(rawArticles.map((a) => a.id));
+    const items = (rawArticleItemsQuery.data || []).filter((it) => rawArticleIds.has(it.article));
+    exportStockToXlsx(rawArticles, items);
+  };
+
+  // "Umtausch" (exchange) - lets staff swap an order line to a different
+  // size of the SAME article. This lookup (article_number -> that
+  // article's own sizes+stock) reuses the raw articles/article_items
+  // already fetched for the reorder/export features above, so opening the
+  // size picker in OrderModal needs no extra request.
+  const sizesByArticleNumber = useMemo(() => {
+    const articleByNumber = new Map<string, ArticleRecord>();
+    for (const a of rawArticlesQuery.data || []) articleByNumber.set(a.article_number, a);
+
+    const map: Record<string, { justStock: boolean; sizes: Array<{ size: string; stock: number }> }> = {};
+    for (const [articleNumber, article] of articleByNumber) {
+      map[articleNumber] = {
+        // Same "just_stock" rule the exchange route itself enforces (see
+        // admin.pb.js) - "yes" means stock is a hard limit, so a size that's
+        // sold out there genuinely can't be picked; otherwise it's just a
+        // pre-order.
+        justStock: article.just_stock === "yes",
+        sizes: (rawArticleItemsQuery.data || [])
+          .filter((it) => it.article === article.id)
+          .map((it) => ({ size: it.size, stock: it.stock })),
+      };
+    }
+    return map;
+  }, [rawArticlesQuery.data, rawArticleItemsQuery.data]);
+
+  const exchangeMutation = useMutation({
+    mutationFn: (vars: { orderId: string; itemId: string; newSize: string }) =>
+      exchangeOrderItem(token, vars.orderId, vars.itemId, { newSize: vars.newSize }),
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-items"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-logs"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-stock"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-articles-raw"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-article-items-raw"] });
+      toast({
+        description: result.readyWasReset
+          ? t("adminExchangeSuccessPreOrderReady")
+          : result.isPreOrder
+            ? t("adminExchangeSuccessPreOrder")
+            : t("adminExchangeSuccess"),
+      });
+    },
+    onError: (err) =>
+      toast({
+        variant: "destructive",
+        description: err instanceof Error ? err.message : t("adminActionError"),
+      }),
+  });
+
+  const handleExchangeItem = (orderId: string, itemId: string, newSize: string) => {
+    exchangeMutation.mutate({ orderId, itemId, newSize });
+  };
+
   const selectedOrder = selectedOrderId ? ordersById[selectedOrderId] || null : null;
   const selectedArticle = selectedArticleId
     ? enrichedArticles.find((a) => a.id === selectedArticleId) || null
@@ -489,14 +594,12 @@ const AdminDashboard = () => {
   const handleCancel = () => {
     if (!selectedOrder) return;
     setCancelNote(selectedOrder.cancelled_note || "");
-    setCancelRefundAmount((selectedOrder.amount_paid || 0).toFixed(2));
     setCancelDialogOpen(true);
   };
 
   const handleCloseCancelDialog = () => {
     setCancelDialogOpen(false);
     setCancelNote("");
-    setCancelRefundAmount("");
   };
 
   // Separate from orderMutation/undoMutation above - a cancel failure (most
@@ -505,15 +608,18 @@ const AdminDashboard = () => {
   // mutations show, so staff know the order was NOT cancelled and nothing
   // was refunded rather than just "something went wrong".
   const cancelMutation = useMutation({
-    mutationFn: (vars: { id: string; note: string; refundAmount?: number }) =>
-      cancelOrder(token, vars.id, { note: vars.note, refundAmount: vars.refundAmount }),
+    mutationFn: (vars: { id: string; note: string }) =>
+      // No refundAmount passed - always refund the order's full amount_paid,
+      // server-side default (see cancelOrder's doc comment). The refund
+      // amount is no longer staff-editable on purpose: it must always match
+      // what was actually charged.
+      cancelOrder(token, vars.id, { note: vars.note }),
     onMutate: (vars) => setBusyOrderId(vars.id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
       queryClient.invalidateQueries({ queryKey: ["admin-logs"] });
       setCancelDialogOpen(false);
       setCancelNote("");
-      setCancelRefundAmount("");
       setSelectedOrderId(null);
     },
     onError: (err: unknown) => {
@@ -527,12 +633,7 @@ const AdminDashboard = () => {
 
   const handleConfirmCancel = () => {
     if (!selectedOrder) return;
-    const amount = Number(cancelRefundAmount);
-    cancelMutation.mutate({
-      id: selectedOrder.id,
-      note: cancelNote,
-      refundAmount: selectedOrder.payment_provider === "zahls" && isFinite(amount) ? amount : undefined,
-    });
+    cancelMutation.mutate({ id: selectedOrder.id, note: cancelNote });
   };
 
   // Separate mutation from orderMutation/cancelMutation above - saving a
@@ -597,7 +698,7 @@ const AdminDashboard = () => {
   };
 
   return (
-    <div className="h-screen overflow-hidden flex flex-col bg-[hsl(0_0%_98%)] text-[hsl(220_13%_18%)]">
+    <div className="h-dvh overflow-hidden flex flex-col bg-[hsl(0_0%_98%)] text-[hsl(220_13%_18%)]">
       <div className="shrink-0">
         <AdminHeader search={search} onSearchChange={setSearch} onOpenPromoCodes={() => setPromoCodesOpen(true)} />
       </div>
@@ -638,6 +739,7 @@ const AdminDashboard = () => {
               setRangeMode("custom");
             }}
             onSelectOrder={setSelectedOrderId}
+            onExport={handleExportOrders}
           />
         </div>
 
@@ -664,6 +766,7 @@ const AdminDashboard = () => {
             reorderMode={reorderMode}
             onMoveProduct={handleMoveProduct}
             movingProductId={movingProductId}
+            onExport={handleExportStock}
           />
         </div>
       </div>
@@ -687,13 +790,15 @@ const AdminDashboard = () => {
           (orderMutation.isPending || undoMutation.isPending || cancelMutation.isPending) &&
           busyOrderId === selectedOrder?.id
         }
+        sizesByArticleNumber={sizesByArticleNumber}
+        onExchange={handleExchangeItem}
+        exchanging={exchangeMutation.isPending}
+        exchangingItemId={exchangeMutation.variables?.itemId}
       />
       <CancelOrderDialog
         order={cancelDialogOpen ? selectedOrder : null}
         note={cancelNote}
         onNoteChange={setCancelNote}
-        refundAmount={cancelRefundAmount}
-        onRefundAmountChange={setCancelRefundAmount}
         onClose={handleCloseCancelDialog}
         onConfirm={handleConfirmCancel}
         submitting={cancelMutation.isPending}

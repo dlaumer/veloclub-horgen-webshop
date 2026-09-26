@@ -39,6 +39,10 @@ export const translations = {
     en: "Add to Cart",
     de: "In den Warenkorb"
   },
+  preOrders: {
+    en: "Pre-order",
+    de: "Pre-order"
+  },
   outOfStock: {
     en: "Out of stock",
     de: "Nicht auf Lager"
@@ -349,6 +353,7 @@ export const translations = {
   adminStatCostPrice: { en: "Cost price", de: "Einkaufspreis" },
   adminStatCostPricePaid: { en: "Cost price (paid items)", de: "Einkaufspreis (bezahlte Artikel)" },
   adminStatNotCollected: { en: "Not collected", de: "Nicht abgeholt" },
+  adminStatReadyNotPicked: { en: "Ready, not picked up", de: "Bereit, nicht abgeholt" },
   adminStatTrend: { en: "Trend", de: "Verlauf" },
   adminRangeToday: { en: "Today", de: "Heute" },
   adminRangeWeek: { en: "Week", de: "Woche" },
@@ -407,6 +412,7 @@ export const translations = {
   adminKindCancel: { en: "Cancelled", de: "Storniert" },
   adminKindReadyUndo: { en: "Ready undone", de: "Bereit rückgängig" },
   adminKindPickupUndo: { en: "Pickup undone", de: "Abholung rückgängig" },
+  adminKindExchange: { en: "Exchanged", de: "Umgetauscht" },
   adminAllCategories: { en: "All", de: "Alle" },
   adminLogout: { en: "Log out", de: "Abmelden" },
   adminItemsSuffix: { en: " items", de: " Art." },
@@ -522,5 +528,22 @@ export const translations = {
   adminSortOrderHint: {
     en: "Use the arrows in the article list to change this (see \"All\" category, no search)",
     de: "Über die Pfeile in der Artikelliste änderbar (Kategorie \"Alle\", ohne Suche)",
+  },
+  adminDownloadExcel: { en: "Download as Excel", de: "Als Excel herunterladen" },
+  adminExportEmpty: {
+    en: "Nothing to export with the current filter/search.",
+    de: "Mit dem aktuellen Filter/Suchbegriff gibt es nichts zu exportieren.",
+  },
+  adminExchangeSize: { en: "Exchange for a different size", de: "Gegen andere Grösse umtauschen" },
+  adminConfirmExchange: { en: "Confirm exchange", de: "Umtausch bestätigen" },
+  adminExchanging: { en: "Exchanging…", de: "Wird umgetauscht…" },
+  adminExchangeSuccess: { en: "Item exchanged.", de: "Artikel umgetauscht." },
+  adminExchangeSuccessPreOrder: {
+    en: "Item exchanged - the new size is on backorder.",
+    de: "Artikel umgetauscht - die neue Grösse ist eine Vorbestellung.",
+  },
+  adminExchangeSuccessPreOrderReady: {
+    en: "Item exchanged as a backorder - \"Ready\" was reset since the order now has to wait.",
+    de: "Artikel als Vorbestellung umgetauscht - \"Bereit\" wurde zurückgesetzt, da die Bestellung nun warten muss.",
   },
 };
