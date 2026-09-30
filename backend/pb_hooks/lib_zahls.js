@@ -292,6 +292,15 @@ function computeCartPricing(cart, promo) {
 // chrome, so a future style tweak only has to happen in one place.
 
 const SHOP_NAME = "Velo Club Horgen"
+// Blind-copied on the order CONFIRMATION email only (not ready/pickup/undo/
+// exchange emails) - club + committee members who want visibility into new
+// orders as they come in, per explicit request.
+const CONFIRMATION_BCC = [
+  { address: "waedenswil@thoemus.ch" },
+  { address: "c.sailer@outlook.com" },
+  { address: "boeni.erika@gmail.com" },
+  { address: "oliver.staeheli@gmail.com" },
+]
 // Same club logo the old Apps Script emails used - publicly reachable, so
 // referenced directly by URL rather than fetched+inlined as a cid attachment
 // (goja/PocketBase has no easy UrlFetchApp equivalent for that, and a plain
@@ -691,7 +700,11 @@ function sendOrderConfirmationEmail(app, order, pricing) {
   try {
     const settings = app.settings()
     const orderId = order.get("order_number")
-    const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const buyerFirst = (order.get("buyer_name") || "").trim()
+    const buyerLast = (order.get("buyer_lastname") || "").trim()
+    const name = buyerFirst
+      ? `Hoi ${buyerFirst}${buyerLast ? ` ${buyerLast}` : ""}`
+      : "Liebe*r Kunde*in"
     const total = `${fmtMoneyDE(order.get("amount_paid"))} CHF`
     const comments = order.get("comments") || ""
     const lines = pricing && Array.isArray(pricing.lines) ? pricing.lines : []
@@ -780,6 +793,7 @@ ${SHOP_NAME}
     const message = new MailerMessage({
       from: { address: settings.meta.senderAddress, name: settings.meta.senderName },
       to: [{ address: order.get("buyer_email") }],
+      bcc: CONFIRMATION_BCC,
       subject: `Bestellbestätigung #${orderId} – ${SHOP_NAME}`,
       html: html,
       text: text,
@@ -799,7 +813,11 @@ function sendReadyEmail(app, order) {
   try {
     const settings = app.settings()
     const orderId = order.get("order_number")
-    const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const buyerFirst = (order.get("buyer_name") || "").trim()
+    const buyerLast = (order.get("buyer_lastname") || "").trim()
+    const name = buyerFirst
+      ? `Hoi ${buyerFirst}${buyerLast ? ` ${buyerLast}` : ""}`
+      : "Liebe*r Kunde*in"
     const items = renderOrderItemsSection(
       orderItemsAsLines(app, order),
       Number(order.get("amount_paid") || 0),
@@ -854,7 +872,11 @@ function sendPickedUpEmail(app, order) {
   try {
     const settings = app.settings()
     const orderId = order.get("order_number")
-    const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const buyerFirst = (order.get("buyer_name") || "").trim()
+    const buyerLast = (order.get("buyer_lastname") || "").trim()
+    const name = buyerFirst
+      ? `Hoi ${buyerFirst}${buyerLast ? ` ${buyerLast}` : ""}`
+      : "Liebe*r Kunde*in"
     const items = renderOrderItemsSection(
       orderItemsAsLines(app, order),
       Number(order.get("amount_paid") || 0),
@@ -918,7 +940,11 @@ function sendReadyUndoEmail(app, order) {
   try {
     const settings = app.settings()
     const orderId = order.get("order_number")
-    const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const buyerFirst = (order.get("buyer_name") || "").trim()
+    const buyerLast = (order.get("buyer_lastname") || "").trim()
+    const name = buyerFirst
+      ? `Hoi ${buyerFirst}${buyerLast ? ` ${buyerLast}` : ""}`
+      : "Liebe*r Kunde*in"
     const correction =
       "Wir haben dir eben mitgeteilt, dass deine Bestellung bereit zur Abholung ist - das war leider ein Irrtum. " +
       "Bitte ignoriere diese vorherige Nachricht, deine Bestellung ist noch NICHT abholbereit. " +
@@ -971,7 +997,11 @@ function sendPickedUpUndoEmail(app, order) {
   try {
     const settings = app.settings()
     const orderId = order.get("order_number")
-    const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const buyerFirst = (order.get("buyer_name") || "").trim()
+    const buyerLast = (order.get("buyer_lastname") || "").trim()
+    const name = buyerFirst
+      ? `Hoi ${buyerFirst}${buyerLast ? ` ${buyerLast}` : ""}`
+      : "Liebe*r Kunde*in"
     const correction =
       "Wir haben dir eben mitgeteilt, dass deine Bestellung abgeholt wurde - das war leider ein Irrtum. " +
       "Bitte ignoriere diese vorherige Nachricht, deine Bestellung wartet weiterhin auf dich."
@@ -1028,7 +1058,11 @@ function sendExchangeEmail(app, order, details) {
   try {
     const settings = app.settings()
     const orderId = order.get("order_number")
-    const name = order.get("buyer_name") || "Liebe*r Kunde*in"
+    const buyerFirst = (order.get("buyer_name") || "").trim()
+    const buyerLast = (order.get("buyer_lastname") || "").trim()
+    const name = buyerFirst
+      ? `Hoi ${buyerFirst}${buyerLast ? ` ${buyerLast}` : ""}`
+      : "Liebe*r Kunde*in"
     let changeNote =
       `Wir haben "${details.articleName}" für dich von Grösse ${details.oldSize} ` +
       `auf Grösse ${details.newSize} umgetauscht.`

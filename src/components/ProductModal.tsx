@@ -219,6 +219,12 @@ export const ProductModal = ({ product, isOpen, cartItems, onClose, onAddToCart 
                   const rawRemaining = size.stock != null ? size.stock - alreadyInCart : null;
                   const displayStock = enforceStockLimit ? Math.max(0, rawRemaining ?? 0) : rawRemaining;
                   const isPreOrder = !enforceStockLimit && rawRemaining != null && rawRemaining < 0;
+                  // Already at exactly zero (nothing oversold yet, so no
+                  // count to show) but stock isn't a hard limit here - the
+                  // size can still be selected, it just won't come from
+                  // physical stock. Distinct from isPreOrder above, which is
+                  // for when the cart has already pushed it negative.
+                  const isOnlyPreOrder = !enforceStockLimit && rawRemaining === 0;
 
                   return (
                     <button
@@ -235,6 +241,10 @@ export const ProductModal = ({ product, isOpen, cartItems, onClose, onAddToCart 
                       {isPreOrder ? (
                         <span className="whitespace-nowrap text-[10px] leading-tight text-amber-600 sm:text-xs">
                           {-rawRemaining!} {t("preOrders")}
+                        </span>
+                      ) : isOnlyPreOrder ? (
+                        <span className="whitespace-nowrap text-[10px] leading-tight text-amber-600 sm:text-xs">
+                          {t("onlyPreOrder")}
                         </span>
                       ) : (
                         (enforceStockLimit && size.stock != null || (size.stock != null && (size.stock > 0 || size.justStock === "yes"))) && (

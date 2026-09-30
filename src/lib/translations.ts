@@ -43,6 +43,10 @@ export const translations = {
     en: "Pre-order",
     de: "Pre-order"
   },
+  onlyPreOrder: {
+    en: "Only pre-order",
+    de: "Nur Pre-Order"
+  },
   outOfStock: {
     en: "Out of stock",
     de: "Nicht auf Lager"
