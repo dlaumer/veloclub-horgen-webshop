@@ -275,6 +275,10 @@ export type OrderItemRecord = {
   unit_price: number;
   price_paid: number;
   is_return: boolean;
+  // Per-item status (see 1783912000_order_items_ready_pickup.js). Plain
+  // bools, unlike the order's own tri-state-parsed flags.
+  ready: boolean;
+  picked_up: boolean;
   expand?: {
     article?: {
       id: string;
@@ -290,8 +294,21 @@ export type OrderItemRecord = {
 export type LogRecord = {
   id: string;
   order: string;
-  kind: "purchase" | "ready" | "pickup" | "cancel" | "ready_undo" | "pickup_undo" | "exchange";
+  kind:
+    | "purchase"
+    | "ready"
+    | "pickup"
+    | "cancel"
+    | "ready_undo"
+    | "pickup_undo"
+    | "exchange"
+    | "item_ready"
+    | "item_pickup"
+    | "item_ready_undo"
+    | "item_pickup_undo";
   note: string;
+  // order_items id, only set on the item_* kinds
+  item_id?: string;
   created: string;
   // The log's own "this actually happened at" timestamp - NOT the same as
   // the order's placed_at. For "purchase" logs this is set to match the
@@ -388,6 +405,23 @@ export async function exchangeOrderItem(
   });
 }
 
+/**
+ * Marks ONE order item ready / picked up (or undoes it). The backend keeps
+ * the whole order's ready/picked_up in sync and emails the customer - see
+ * POST /api/admin/orders/{id}/items/{itemId}/status in admin.pb.js.
+ */
+export async function setOrderItemStatus(
+  token: string,
+  orderId: string,
+  itemId: string,
+  data: { field: "ready" | "picked_up"; value: boolean },
+): Promise<{ ok: boolean; item: OrderItemRecord; order: OrderRecord }> {
+  return pbFetch(`/api/admin/orders/${orderId}/items/${itemId}/status`, token, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(data),
+  });
+}
 
 // ---------------------------------------------------------------------
 // Article editing. The read-only Articles panel is built from the public

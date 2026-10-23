@@ -345,6 +345,11 @@ routerAdd(
       txApp.save(freshNewSizeItem)
 
       item.set("size", newSize)
+      // A line moved onto a size we don't have yet can't still count as
+      // "ready" (per-item ready, see the /status route below).
+      if (becomesPreOrder && item.get("ready") === true) {
+        item.set("ready", false)
+      }
       txApp.save(item)
 
       const logsCollection = txApp.findCollectionByNameOrId("logs")
@@ -394,6 +399,128 @@ routerAdd(
     }
 
     return e.json(200, { ok: true, item: item, isPreOrder: becomesPreOrder, readyWasReset: resetReady })
+  },
+  $apis.requireAuth("admins", "_superusers")
+)
+
+// ---------------------------------------------------------------------
+// POST /api/admin/orders/{id}/items/{itemId}/status
+// Marks ONE order item ready / picked up (or undoes that), and keeps the
+// whole order's ready / picked_up in sync:
+//   - order.ready    = every item is ready (or already picked up)
+//   - order.picked_up = every item is picked up
+// Customer emails: marking an item ready while others still aren't sends
+// the "part of your order is ready" email (sendItemReadyEmail); the action
+// that completes the order sends the normal whole-order email instead.
+// Partial pickups don't email anyone. Whole-order buttons go through the
+// orders PATCH hook in veloclub.pb.js, which sets every item to match.
+//
+// Body: { "field": "ready" | "picked_up", "value": true | false }
+// Response: { ok: true, item: {...}, order: {...} }
+// ---------------------------------------------------------------------
+routerAdd(
+  "POST",
+  "/api/admin/orders/{id}/items/{itemId}/status",
+  (e) => {
+    const zahls = require(`${__hooks}/lib_zahls.js`)
+
+    const order = e.app.findRecordById("orders", e.request.pathValue("id"))
+    if (order.get("cancelled") === true) {
+      throw new BadRequestError("Eine stornierte Bestellung kann nicht geändert werden")
+    }
+    const item = e.app.findRecordById("order_items", e.request.pathValue("itemId"))
+    if (item.get("order") !== order.id) {
+      throw new BadRequestError("Dieser Artikel gehört nicht zu dieser Bestellung")
+    }
+
+    const body = e.requestInfo().body || {}
+    const field = String(body.field || "")
+    if (field !== "ready" && field !== "picked_up") {
+      throw new BadRequestError("field must be 'ready' or 'picked_up'")
+    }
+    const value = body.value === true || body.value === "true"
+
+    if (item.get(field) === value) {
+      return e.json(200, { ok: true, item: item, order: order })
+    }
+    if (field === "ready" && !value && item.get("picked_up") === true) {
+      throw new BadRequestError("Zuerst die Abholung rückgängig machen")
+    }
+
+    let articleName = ""
+    try {
+      articleName = e.app.findRecordById("articles", item.get("article")).get("name") || ""
+    } catch (err) {
+      // article deleted since the order was placed - log without a name
+    }
+    const label = articleName + (item.get("size") ? " (" + item.get("size") + ")" : "")
+    const adminName = e.auth ? e.auth.get("name") || e.auth.get("email") : ""
+
+    // what happened to the whole order as a result: "", or the email to send
+    let orderEmail = ""
+
+    e.app.runInTransaction((txApp) => {
+      const logsCollection = txApp.findCollectionByNameOrId("logs")
+      function addLog(kind, note, itemId) {
+        const log = new Record(logsCollection)
+        log.set("order", order.id)
+        log.set("kind", kind)
+        log.set("note", note)
+        // only the item_* kinds carry this (see 1783914000_logs_item_id.js)
+        log.set("item_id", itemId || "")
+        log.set("admin_name", adminName)
+        log.set("placed_at", new Date().toISOString())
+        txApp.save(log)
+      }
+
+      item.set(field, value)
+      txApp.save(item)
+      addLog(
+        (field === "ready" ? "item_ready" : "item_pickup") + (value ? "" : "_undo"),
+        label,
+        item.id,
+      )
+
+      const all = txApp.findRecordsByFilter("order_items", "order = {:oid}", "", 0, 0, { oid: order.id })
+      const allReady = all.every((it) => it.get("ready") === true || it.get("picked_up") === true)
+      const allPicked = all.every((it) => it.get("picked_up") === true)
+
+      if (field === "ready") {
+        if (value && allReady && order.get("ready") !== true) {
+          order.set("ready", true)
+          txApp.save(order)
+          addLog("ready", "Alle Artikel bereit")
+          orderEmail = "ready"
+        } else if (value && !allReady) {
+          orderEmail = "item_ready"
+        } else if (!value && order.get("ready") === true) {
+          order.set("ready", false)
+          txApp.save(order)
+          addLog("ready_undo", "Artikel nicht mehr bereit: " + label)
+          orderEmail = "ready_undo"
+        }
+      } else {
+        if (value && allPicked && order.get("picked_up") !== true) {
+          order.set("picked_up", true)
+          txApp.save(order)
+          addLog("pickup", "Alle Artikel abgeholt")
+          orderEmail = "pickup"
+        } else if (!value && order.get("picked_up") === true) {
+          order.set("picked_up", false)
+          txApp.save(order)
+          addLog("pickup_undo", "Artikel nicht mehr abgeholt: " + label)
+          orderEmail = "pickup_undo"
+        }
+      }
+    })
+
+    if (orderEmail === "ready") zahls.sendReadyEmail(e.app, order)
+    else if (orderEmail === "item_ready") zahls.sendItemReadyEmail(e.app, order, item.id)
+    else if (orderEmail === "ready_undo") zahls.sendReadyUndoEmail(e.app, order)
+    else if (orderEmail === "pickup") zahls.sendPickedUpEmail(e.app, order)
+    else if (orderEmail === "pickup_undo") zahls.sendPickedUpUndoEmail(e.app, order)
+
+    return e.json(200, { ok: true, item: item, order: order })
   },
   $apis.requireAuth("admins", "_superusers")
 )

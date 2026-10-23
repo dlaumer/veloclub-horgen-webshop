@@ -61,15 +61,22 @@ function buildQueryRFC3986(entries) {
   return entries.map(([k, v]) => encodeURIComponent(k) + "=" + encodeURIComponent(v)).join("&")
 }
 
+// Used for the string that gets SIGNED. Zahls/Payrexx re-signs the received
+// params with PHP's http_build_query (urlencode), which percent-encodes
+// everything except letters, digits and "-_." - but JS's encodeURIComponent
+// ALSO leaves ! ' ( ) * ~ untouched. Any value containing one of those (a
+// comment like "Danke!", a name like O'Brien, an item title with
+// "(Return - Discounted)" or "(6-8)") then produced a different signed
+// string than Zahls computes, and Zahls answers 403 "The API secret is not
+// correct" even though the secret itself is fine. Escape them explicitly.
+function encodeLikePhpUrlencode(s) {
+  return encodeURIComponent(s)
+    .replace(/[!'()*~]/g, (c) => "%" + c.charCodeAt(0).toString(16).toUpperCase())
+    .replace(/%20/g, "+") // spaces -> +
+}
+
 function buildQueryRFC1738(entries) {
-  // spaces -> +
-  return entries
-    .map(([k, v]) => {
-      const kk = encodeURIComponent(k).replace(/%20/g, "+")
-      const vv = encodeURIComponent(v).replace(/%20/g, "+")
-      return kk + "=" + vv
-    })
-    .join("&")
+  return entries.map(([k, v]) => encodeLikePhpUrlencode(k) + "=" + encodeLikePhpUrlencode(v)).join("&")
 }
 
 // ---- refund (used when staff cancel a paid order from the admin dashboard) ----
@@ -468,6 +475,11 @@ function orderItemsAsLines(app, order) {
       article && images.length ? API_BASE + "/api/files/articles/" + article.id + "/" + images[0] : ""
 
     return {
+      // extras used only by sendItemReadyEmail (partial-ready email) -
+      // buildItemRows ignores unknown fields.
+      itemId: item.id,
+      ready: item.get("ready") === true,
+      pickedUp: item.get("picked_up") === true,
       qty: Number(item.get("quantity") || 0),
       name: article ? article.get("name") : "",
       sku: article ? article.get("article_number") : "",
@@ -688,7 +700,9 @@ function finalizeOrder(app, input) {
 }
 
 const PICKUP_NOTE = "Die Abholung erfolgt bei Thömus Bike World in Au-Wädenswil."
-const CONTACT_NOTE = "Bei Fragen antworte einfach auf diese E-Mail."
+// Confirmation email only (the ready email itself is that notification).
+const READY_NOTIFY_NOTE = "Du wirst per Email benachrichtigt werden sobald die Bestellung abholbereit ist."
+const CONTACT_NOTE ="Bei Fragen antworte einfach auf diese E-Mail."
 
 // Sends the "thanks for your order" email, itemized exactly like the
 // original Apps Script version. `pricing` is what finalizeOrder() returned
@@ -734,7 +748,7 @@ ${
 }
 Gesamtsumme: ${total}
 
-${comments ? `Deine Bemerkung:\n${comments}\n\n` : ""}${PICKUP_NOTE}
+${comments ? `Deine Bemerkung:\n${comments}\n\n` : ""}${PICKUP_NOTE} ${READY_NOTIFY_NOTE}
 ${CONTACT_NOTE}
 
 Sportliche Grüsse
@@ -785,7 +799,7 @@ ${SHOP_NAME}
     }
 
     <div style="margin-top:14px;font-size:13px;color:#374151;">
-      <p style="margin:0 0 6px 0;">${escapeHtml(PICKUP_NOTE)}</p>
+      <p style="margin:0 0 6px 0;">${escapeHtml(PICKUP_NOTE)} ${escapeHtml(READY_NOTIFY_NOTE)}</p>
       <p style="margin:0 0 6px 0;">${escapeHtml(CONTACT_NOTE)}</p>
     </div>`,
     )
@@ -861,6 +875,90 @@ ${SHOP_NAME}
     app.newMailClient().send(message)
   } catch (err) {
     app.logger().error("ready email failed", "orderId", order.get("order_number"), "error", err)
+  }
+}
+
+// Partial-ready email: staff marked ONE item (readyItemId) of a multi-item
+// order as ready while others still aren't. Lists that item as ready now,
+// any items that were already ready earlier, and the ones still pending.
+// (When the LAST pending item gets marked, the caller sends the normal
+// sendReadyEmail instead, since the whole order is then ready.)
+function sendItemReadyEmail(app, order, readyItemId) {
+  try {
+    const settings = app.settings()
+    const orderId = order.get("order_number")
+    const buyerFirst = (order.get("buyer_name") || "").trim()
+    const buyerLast = (order.get("buyer_lastname") || "").trim()
+    const name = buyerFirst
+      ? `Hoi ${buyerFirst}${buyerLast ? ` ${buyerLast}` : ""}`
+      : "Liebe*r Kunde*in"
+
+    const lines = orderItemsAsLines(app, order)
+    const nowReady = lines.filter((l) => l.itemId === readyItemId)
+    const alreadyReady = lines.filter((l) => l.itemId !== readyItemId && (l.ready || l.pickedUp))
+    const pending = lines.filter((l) => l.itemId !== readyItemId && !(l.ready || l.pickedUp))
+
+    const nowRows = buildItemRows(nowReady)
+    const earlierRows = buildItemRows(alreadyReady)
+    const pendingRows = buildItemRows(pending)
+
+    const table = (rows) =>
+      `<table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;"><tbody>${rows}</tbody></table>`
+
+    const text = `${name},
+
+ein Teil deiner Bestellung #${orderId} ist bereit zur Abholung.
+
+Jetzt abholbereit:
+${nowRows.linesText}
+${alreadyReady.length ? `\nBereits abholbereit:\n${earlierRows.linesText}\n` : ""}${
+      pending.length ? `\nNoch nicht bereit (wir melden uns, sobald diese Artikel auch bereit sind):\n${pendingRows.linesText}\n` : ""
+    }
+${PICKUP_NOTE}
+${CONTACT_NOTE}
+
+Sportliche Grüsse
+${SHOP_NAME}
+`
+
+    const html = renderEmailShell(
+      orderId,
+      `
+    <p style="margin:0 0 10px 0;">${escapeHtml(name)},</p>
+    <p style="margin:0 0 14px 0;">
+      Ein Teil deiner Bestellung <span style="font-weight:600;">#${escapeHtml(orderId)}</span> ist
+      <strong>bereit zur Abholung</strong>! 🎉
+    </p>
+    <h3 style="font-size:15px;margin:12px 0 6px 0;color:#166534;">Jetzt abholbereit</h3>
+    ${table(nowRows.rowsHtml)}
+    ${
+      alreadyReady.length
+        ? `<h3 style="font-size:15px;margin:16px 0 6px 0;">Bereits abholbereit</h3>${table(earlierRows.rowsHtml)}`
+        : ""
+    }
+    ${
+      pending.length
+        ? `<h3 style="font-size:15px;margin:16px 0 6px 0;color:#92600b;">Noch nicht bereit</h3>
+    <p style="margin:0 0 6px 0;font-size:13px;color:#374151;">Wir melden uns, sobald diese Artikel auch bereit sind.</p>
+    ${table(pendingRows.rowsHtml)}`
+        : ""
+    }
+    <div style="font-size:13px;color:#374151;margin-top:14px;">
+      <p style="margin:0 0 6px 0;">${escapeHtml(PICKUP_NOTE)}</p>
+      <p style="margin:0 0 6px 0;">${escapeHtml(CONTACT_NOTE)}</p>
+    </div>`,
+    )
+
+    const message = new MailerMessage({
+      from: { address: settings.meta.senderAddress, name: settings.meta.senderName },
+      to: [{ address: order.get("buyer_email") }],
+      subject: `Teil deiner Bestellung #${orderId} ist bereit – ${SHOP_NAME}`,
+      html: html,
+      text: text,
+    })
+    app.newMailClient().send(message)
+  } catch (err) {
+    app.logger().error("item ready email failed", "orderId", order.get("order_number"), "error", err)
   }
 }
 
@@ -1131,6 +1229,7 @@ module.exports = {
   finalizeOrder,
   sendOrderConfirmationEmail,
   sendReadyEmail,
+  sendItemReadyEmail,
   sendPickedUpEmail,
   sendReadyUndoEmail,
   sendPickedUpUndoEmail,

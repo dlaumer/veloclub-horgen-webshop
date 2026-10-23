@@ -16,6 +16,11 @@ const DOT_COLORS: Record<EnrichedLog["kind"], string> = {
   ready_undo: "hsl(220 13% 55%)",
   pickup_undo: "hsl(220 13% 55%)",
   exchange: "hsl(258 60% 55%)",
+  // single-item actions - same hues as their whole-order counterparts
+  item_ready: "hsl(35 90% 68%)", // lighter shade of the "ready" orange
+  item_pickup: "hsl(150 45% 45%)",
+  item_ready_undo: "hsl(220 13% 55%)",
+  item_pickup_undo: "hsl(220 13% 55%)",
 };
 
 interface LogPanelProps {
@@ -37,6 +42,10 @@ export const LogPanel = ({ logs, onSelectOrder, activeKind, onKindChange }: LogP
     ready_undo: t("adminKindReadyUndo"),
     pickup_undo: t("adminKindPickupUndo"),
     exchange: t("adminKindExchange"),
+    item_ready: t("adminKindItemReady"),
+    item_pickup: t("adminKindItemPickup"),
+    item_ready_undo: t("adminKindItemReadyUndo"),
+    item_pickup_undo: t("adminKindItemPickupUndo"),
   };
 
   const kindFilters: LogKindFilter[] = [
@@ -84,6 +93,12 @@ export const LogPanel = ({ logs, onSelectOrder, activeKind, onKindChange }: LogP
             <span className="w-2 h-2 rounded-full shrink-0" style={{ background: DOT_COLORS[log.kind] }} />
             <span className="text-[12px] overflow-hidden text-ellipsis whitespace-nowrap min-w-0 flex-1">
               <span className="font-semibold">{kindLabels[log.kind]}</span>
+              {log.kind.startsWith("item_") && log.note && (
+                <>
+                  {" · "}
+                  <span className="text-[hsl(220_13%_30%)]">{log.note}</span>
+                </>
+              )}
               {" · "}
               <span className="hidden sm:inline font-semibold">{log.orderNumber}</span>
               <span className="hidden sm:inline">{" · "}</span>

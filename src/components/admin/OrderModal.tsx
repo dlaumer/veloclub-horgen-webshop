@@ -38,6 +38,10 @@ interface OrderModalProps {
   onExchange: (orderId: string, itemId: string, newSize: string) => void;
   exchanging?: boolean;
   exchangingItemId?: string;
+  // Per-item ready / picked up (backend keeps the whole order's status in
+  // sync and emails the customer, see admin.pb.js's .../status route).
+  onItemStatus: (orderId: string, itemId: string, field: "ready" | "picked_up", value: boolean) => void;
+  itemStatusPendingId?: string;
 }
 
 const ACTION_BASE =
@@ -68,6 +72,8 @@ export const OrderModal = ({
   onExchange,
   exchanging,
   exchangingItemId,
+  onItemStatus,
+  itemStatusPendingId,
 }: OrderModalProps) => {
   const { t } = useTranslation();
   const { language } = useLanguage();
@@ -405,6 +411,88 @@ export const OrderModal = ({
                     <Repeat className="w-3.5 h-3.5" />
                   </button>
                 </div>
+                <div className="flex flex-wrap items-center gap-2 px-3 pb-2.5">
+                  {(["ready", "picked_up"] as const).map((field) => {
+                    const isSet = field === "ready" ? item.ready : item.pickedUp;
+                    const setLabel = field === "ready" ? t("adminMarkReady") : t("adminMarkPickedUp");
+                    const undoLabel = field === "ready" ? t("adminUndoReady") : t("adminUndoPickedUp");
+                    const Icon = field === "ready" ? CheckCircle2 : PackageCheck;
+                    const pending = itemStatusPendingId === item.id;
+                    // can't un-ready an item that's already picked up (same
+                    // rule as the whole order) - undo the pickup first
+                    const undoBlocked = field === "ready" && item.pickedUp;
+                    const disabled = cancelledState === true || busy || pending;
+                    return isSet ? (
+                      <span
+                        key={field}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] font-semibold",
+                          // a button that's already set (done) goes grey
+                          "bg-[hsl(220_13%_95%)] text-[hsl(220_13%_55%)] border-[hsl(220_13%_88%)]",
+                        )}
+                      >
+                        <Icon size={13} className="shrink-0" />
+                        {setLabel}
+                        <button
+                          type="button"
+                          title={undoLabel}
+                          aria-label={undoLabel}
+                          disabled={disabled || undoBlocked}
+                          onClick={() => onItemStatus(order.id, item.id, field, false)}
+                          className="ml-0.5 opacity-70 hover:opacity-100 disabled:opacity-30 disabled:cursor-not-allowed cursor-pointer"
+                        >
+                          <Undo2 size={12} />
+                        </button>
+                      </span>
+                    ) : (
+                      <button
+                        key={field}
+                        type="button"
+                        disabled={disabled}
+                        onClick={() => onItemStatus(order.id, item.id, field, true)}
+                        className={cn(
+                          "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[12px] font-semibold cursor-pointer disabled:cursor-not-allowed",
+                          disabled
+                            ? ACTION_TONE.disabled
+                            : field === "ready"
+                              ? ACTION_TONE.blue
+                              : ACTION_TONE.green,
+                        )}
+                      >
+                        <Icon size={13} className="shrink-0" />
+                        {setLabel}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* only when this item's OWN button was pressed (it has its own
+                    log entry); otherwise the order panel at the top covers it */}
+                {((item.ready && item.readyAt) || (item.pickedUp && item.pickedAt)) && (
+                  <div className="flex flex-col gap-0.5 px-3 pb-2.5 text-[12px] text-[hsl(220_13%_50%)]">
+                    {(
+                      [
+                        { on: item.ready, label: t("adminMarkReady"), at: item.readyAt, by: item.readyBy },
+                        { on: item.pickedUp, label: t("adminMarkPickedUp"), at: item.pickedAt, by: item.pickedBy },
+                      ] as const
+                    )
+                      .filter((r) => r.on && r.at)
+                      .map((r) => (
+                        <span key={r.label} className="flex items-center gap-3 flex-wrap">
+                          <span className="font-medium">{r.label}</span>
+                          <span className="flex items-center gap-1">
+                            <Clock size={12} className="shrink-0" />
+                            {fmtDateTime(r.at!, language)}
+                          </span>
+                          {r.by && (
+                            <span className="flex items-center gap-1">
+                              <User size={12} className="shrink-0" />
+                              {r.by}
+                            </span>
+                          )}
+                        </span>
+                      ))}
+                  </div>
+                )}
                 {isExchangeOpen && (
                   <div className="flex flex-wrap items-center gap-2 px-3 pb-2.5">
                     <select

@@ -15,6 +15,17 @@ export interface EnrichedOrderItem {
   costPrice: number;
   image: string;
   isReturn: boolean;
+  // per-item status, see OrderItemRecord.ready / picked_up
+  ready: boolean;
+  pickedUp: boolean;
+  // when/by whom this item was set ready / picked up - from its own item
+  // log entry, falling back to the whole order's (items set via the
+  // whole-order buttons or legacy data have no item entry). Only set while
+  // the item currently IS ready / picked up.
+  readyAt?: string;
+  readyBy?: string;
+  pickedAt?: string;
+  pickedBy?: string;
 }
 
 export interface EnrichedOrder extends OrderRecord {

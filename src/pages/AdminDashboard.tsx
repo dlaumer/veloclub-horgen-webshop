@@ -10,6 +10,7 @@ import {
   updateOrder,
   cancelOrder,
   exchangeOrderItem,
+  setOrderItemStatus,
   parseTriState,
   computeMoneyReceived,
   AuthExpiredError,
@@ -145,6 +146,26 @@ const AdminDashboard = () => {
         cancelledBy?: string;
       }
     > = {};
+    // Per-item timestamps: the most recent item_ready / item_pickup log per
+    // order item (item_id). Only meaningful while the item currently is
+    // ready / picked up - gated below, same reasoning as the order-level
+    // ones (undo entries never delete the original).
+    const itemEvents: Record<string, { readyAt?: string; readyBy?: string; pickedAt?: string; pickedBy?: string }> = {};
+    for (const l of logs) {
+      if ((l.kind !== "item_ready" && l.kind !== "item_pickup") || !l.item_id) continue;
+      const at = l.placed_at || l.created;
+      const cur = itemEvents[l.item_id] || {};
+      if (l.kind === "item_ready" && (!cur.readyAt || at > cur.readyAt)) {
+        cur.readyAt = at;
+        cur.readyBy = l.admin_name || undefined;
+      }
+      if (l.kind === "item_pickup" && (!cur.pickedAt || at > cur.pickedAt)) {
+        cur.pickedAt = at;
+        cur.pickedBy = l.admin_name || undefined;
+      }
+      itemEvents[l.item_id] = cur;
+    }
+
     for (const l of logs) {
       if (l.kind !== "ready" && l.kind !== "pickup" && l.kind !== "cancel") continue;
       const at = l.placed_at || l.created;
@@ -183,6 +204,16 @@ const AdminDashboard = () => {
             ? articleFileUrl(it.expand.article.id, it.expand.article.images[0])
             : PLACEHOLDER_IMG,
         isReturn: !!it.is_return,
+        ready: it.ready === true,
+        pickedUp: it.picked_up === true,
+        // ONLY from the item's own log entry (written when its own
+        // per-item button was pressed). Items set via the whole-order
+        // buttons or legacy data get none - that's covered by the order's
+        // own status panel at the top of the modal.
+        readyAt: it.ready ? itemEvents[it.id]?.readyAt : undefined,
+        readyBy: it.ready ? itemEvents[it.id]?.readyBy : undefined,
+        pickedAt: it.picked_up ? itemEvents[it.id]?.pickedAt : undefined,
+        pickedBy: it.picked_up ? itemEvents[it.id]?.pickedBy : undefined,
       }));
       const itemCount = items.reduce((s, it) => s + it.quantity, 0);
       const costPriceTotal = items.reduce((s, it) => s + it.costPrice, 0);
@@ -340,7 +371,11 @@ const AdminDashboard = () => {
     () =>
       enrichedLogs.filter(
         (l) =>
-          (logKind === "all" || l.kind === logKind) &&
+          // the partial ("Teilweise") entries have no chip of their own -
+          // they show up under the matching whole-order chip instead
+          (logKind === "all" ||
+            l.kind === logKind ||
+            l.kind === `item_${logKind}`) &&
           (matches(l.orderNumber) || matches(l.fullName) || matches(l.note || "")),
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -552,6 +587,27 @@ const AdminDashboard = () => {
 
   const handleExchangeItem = (orderId: string, itemId: string, newSize: string) => {
     exchangeMutation.mutate({ orderId, itemId, newSize });
+  };
+
+  // Per-item ready / picked up. The backend syncs the whole order's status
+  // (and emails the customer) - so refresh orders, items and logs.
+  const itemStatusMutation = useMutation({
+    mutationFn: (vars: { orderId: string; itemId: string; field: "ready" | "picked_up"; value: boolean }) =>
+      setOrderItemStatus(token, vars.orderId, vars.itemId, { field: vars.field, value: vars.value }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["admin-orders"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-order-items"] });
+      queryClient.invalidateQueries({ queryKey: ["admin-logs"] });
+    },
+    onError: (err) =>
+      toast({
+        variant: "destructive",
+        description: err instanceof Error ? err.message : t("adminActionError"),
+      }),
+  });
+
+  const handleItemStatus = (orderId: string, itemId: string, field: "ready" | "picked_up", value: boolean) => {
+    itemStatusMutation.mutate({ orderId, itemId, field, value });
   };
 
   const selectedOrder = selectedOrderId ? ordersById[selectedOrderId] || null : null;
@@ -794,6 +850,8 @@ const AdminDashboard = () => {
         onExchange={handleExchangeItem}
         exchanging={exchangeMutation.isPending}
         exchangingItemId={exchangeMutation.variables?.itemId}
+        onItemStatus={handleItemStatus}
+        itemStatusPendingId={itemStatusMutation.isPending ? itemStatusMutation.variables?.itemId : undefined}
       />
       <CancelOrderDialog
         order={cancelDialogOpen ? selectedOrder : null}

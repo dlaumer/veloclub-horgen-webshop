@@ -563,6 +563,27 @@ onRecordUpdateRequest((e) => {
   // - see the guard above e.next(). Nothing to do here for that transition
   // anymore.
 
+  // Per-item ready/picked_up (see 1783912000_order_items_ready_pickup.js):
+  // the whole-order buttons set every item to match. These saves go through
+  // e.app.save directly, so they don't re-trigger this hook, and the
+  // per-item /status route in admin.pb.js is the only thing that goes the
+  // other direction (items -> order), so there's no loop.
+  function setAllItems(field, value) {
+    const items = e.app.findRecordsByFilter("order_items", "order = {:oid}", "", 0, 0, { oid: e.record.id })
+    for (const it of items) {
+      if (it.get(field) !== value) {
+        it.set(field, value)
+        e.app.save(it)
+      }
+    }
+  }
+  if (before.get("ready") !== e.record.get("ready")) {
+    setAllItems("ready", e.record.get("ready") === true)
+  }
+  if (before.get("picked_up") !== e.record.get("picked_up")) {
+    setAllItems("picked_up", e.record.get("picked_up") === true)
+  }
+
   // ready/picked_up are plain bools again (see
   // 1783902000_orders_ready_pickup_bool.js) - compare against real `true`.
   if (before.get("ready") !== true && e.record.get("ready") === true) {
