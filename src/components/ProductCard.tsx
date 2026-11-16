@@ -11,9 +11,13 @@ export const ProductCard = ({ product, onProductClick }: ProductCardProps) => {
   const { t } = useTranslation();
   
   // Check if product is completely sold out (no stock in any size for any color)
-  const isSoldOut = product.colors.every(color => 
-    color.sizes.every(size => size.stock === 0)
-  );
+  // Only applies when stock is enforced ("Just sell stock" = yes); otherwise
+  // out-of-stock items can still be pre-ordered, so they're never "sold out".
+  const isSoldOut =
+    product.justStock === "yes" &&
+    product.colors.every(color =>
+      color.sizes.every(size => (size.stock ?? 0) <= 0)
+    );
 
   return (
     <div 
